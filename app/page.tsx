@@ -68,10 +68,9 @@ export default function Home() {
         <div className="hero-scanline" aria-hidden="true" />
 
         <nav className="nav-wrap" aria-label="Main navigation">
-          <a href="#top" className="brand" aria-label="INFOStorage home">
-            <span className="brand-mark">I</span>
-            <span className="brand-type">
-              <strong>INFO</strong>storage
+          <a href="#top" className="brand brand-image" aria-label="INFOStorage home">
+            <span className="brand-logo-frame">
+              <img className="brand-logo" src="/infostorage-logo.png" alt="INFOStorage Corporation" />
             </span>
           </a>
 
@@ -79,6 +78,7 @@ export default function Home() {
             <a href="#solutions">Solutions</a>
             <a href="#services">Services</a>
             <a href="#approach">Why INFOStorage</a>
+            <a href="/partners">Partners</a>
             <a href="#contact">Contact</a>
           </div>
 
@@ -94,6 +94,7 @@ export default function Home() {
               <a href="#solutions">Solutions</a>
               <a href="#services">Services</a>
               <a href="#approach">Why INFOStorage</a>
+              <a href="/partners">Partners</a>
               <a href="#contact">Contact</a>
             </div>
           </details>
@@ -295,10 +296,7 @@ export default function Home() {
 
       <footer className="site-footer">
         <a href="#top" className="brand footer-brand" aria-label="Back to top">
-          <span className="brand-mark">I</span>
-          <span className="brand-type">
-            <strong>INFO</strong>storage
-          </span>
+          <img className="footer-logo" src="/infostorage-logo.png" alt="INFOStorage Corporation" />
         </a>
         <p>Enterprise-class solutions for data computing operations.</p>
         <span>© {new Date().getFullYear()} INFOStorage Corporation</span>
