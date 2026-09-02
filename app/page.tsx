@@ -56,6 +56,9 @@ const services = [
   'Project management and systems integration',
 ];
 
+const partnersHref =
+  process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true' ? '/partners.html' : '/partners';
+
 export default function Home() {
   return (
     <main className="site-shell">
@@ -78,7 +81,7 @@ export default function Home() {
             <a href="#solutions">Solutions</a>
             <a href="#services">Services</a>
             <a href="#approach">Why INFOStorage</a>
-            <a href="/partners">Partners</a>
+            <a href={partnersHref}>Partners</a>
             <a href="#contact">Contact</a>
           </div>
 
@@ -94,7 +97,7 @@ export default function Home() {
               <a href="#solutions">Solutions</a>
               <a href="#services">Services</a>
               <a href="#approach">Why INFOStorage</a>
-              <a href="/partners">Partners</a>
+              <a href={partnersHref}>Partners</a>
               <a href="#contact">Contact</a>
             </div>
           </details>

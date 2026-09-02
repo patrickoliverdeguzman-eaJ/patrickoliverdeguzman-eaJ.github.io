@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { ArrowRight, ArrowUpRight, Menu } from 'lucide-react';
 
+export const dynamic = 'force-static';
+
 const partners = [
   { name: 'A10 Networks', focus: 'Application delivery & security' },
   { name: 'Hitachi Data Systems', focus: 'Enterprise data infrastructure' },
@@ -24,6 +26,9 @@ export const metadata: Metadata = {
   },
 };
 
+const partnersHref =
+  process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true' ? '/partners.html' : '/partners';
+
 export default function PartnersPage() {
   return (
     <main className="partner-page">
@@ -39,7 +44,7 @@ export default function PartnersPage() {
             <a href="/#solutions">Solutions</a>
             <a href="/#services">Services</a>
             <a href="/#approach">Why INFOStorage</a>
-            <a className="nav-active" href="/partners">Partners</a>
+            <a className="nav-active" href={partnersHref}>Partners</a>
             <a href="/#contact">Contact</a>
           </div>
 
@@ -55,7 +60,7 @@ export default function PartnersPage() {
               <a href="/#solutions">Solutions</a>
               <a href="/#services">Services</a>
               <a href="/#approach">Why INFOStorage</a>
-              <a href="/partners">Partners</a>
+              <a href={partnersHref}>Partners</a>
               <a href="/#contact">Contact</a>
             </div>
           </details>
