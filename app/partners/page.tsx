@@ -35,7 +35,7 @@ export default function PartnersPage() {
       <section className="partner-hero">
         <nav className="nav-wrap" aria-label="Main navigation">
           <a href="/" className="brand brand-image" aria-label="INFOStorage home">
-            <span className="brand-logo-frame">
+            <span className="brand-logo-frame partner-brand-logo-frame">
               <img className="brand-logo" src="/infostorage-logo.png" alt="INFOStorage Corporation" />
             </span>
           </a>
@@ -81,10 +81,12 @@ export default function PartnersPage() {
             </a>
           </div>
 
-          <div className="partner-logo-stage" aria-hidden="true">
+          <div className="partner-logo-stage">
             <div className="logo-stage-orbit orbit-a" />
             <div className="logo-stage-orbit orbit-b" />
-            <img src="/infostorage-logo.png" alt="" />
+            <div className="partner-logo-plaque">
+              <img src="/infostorage-logo.png" alt="INFOStorage Corporation" />
+            </div>
           </div>
         </div>
       </section>
@@ -158,7 +160,7 @@ export default function PartnersPage() {
       </section>
 
       <footer className="site-footer">
-        <a href="/" className="brand footer-brand" aria-label="INFOStorage home">
+        <a href="/" className="brand footer-brand partner-footer-brand" aria-label="INFOStorage home">
           <img className="footer-logo" src="/infostorage-logo.png" alt="INFOStorage Corporation" />
         </a>
         <p>Enterprise-class solutions for data computing operations.</p>
