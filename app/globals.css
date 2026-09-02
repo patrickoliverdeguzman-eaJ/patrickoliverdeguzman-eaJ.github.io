@@ -104,9 +104,9 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   width: 20px;
   color: var(--navy);
   background: var(--copper);
-  font-family: Georgia, serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   font-size: 1rem;
-  font-style: italic;
+  font-style: normal;
   font-weight: 800;
   line-height: 1;
 }
@@ -159,14 +159,14 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   max-width: 780px;
   margin: 1.3rem 0 1.6rem;
   color: white;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   font-size: clamp(3.7rem, 7.4vw, 7.5rem);
-  font-weight: 400;
-  letter-spacing: -0.075em;
+  font-weight: 560;
+  letter-spacing: -0.065em;
   line-height: 0.89;
 }
 
-.hero-title span { color: var(--electric); font-style: italic; }
+.hero-title span { color: var(--electric); font-style: normal; font-weight: 680; }
 
 .hero-description {
   max-width: 560px;
@@ -264,14 +264,14 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   margin: 0;
   max-width: 880px;
   color: var(--ink);
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   font-size: clamp(2.5rem, 5vw, 5.5rem);
-  font-weight: 400;
-  letter-spacing: -0.065em;
+  font-weight: 560;
+  letter-spacing: -0.06em;
   line-height: 0.95;
 }
 
-.display-heading em { color: var(--copper); }
+.display-heading em { color: var(--copper); font-style: normal; font-weight: 680; }
 .intro-copy { padding-bottom: 0.45rem; }
 
 .intro-copy p, .services-head > p, .solutions-heading > p, .continuity-copy > p:not(.eyebrow), .contact-content > p:not(.eyebrow) {
@@ -345,9 +345,9 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .solution-card h3 {
   position: relative;
   margin: 3.6rem 0 0.8rem;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   font-size: clamp(1.7rem, 2.2vw, 2.35rem);
-  font-weight: 400;
+  font-weight: 600;
   letter-spacing: -0.05em;
   line-height: 1;
   text-transform: capitalize;
@@ -433,9 +433,9 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .continuity-copy h2, .contact-content h2 {
   margin: 1.2rem 0 1.4rem;
   color: white;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   font-size: clamp(2.65rem, 4.7vw, 5rem);
-  font-weight: 400;
+  font-weight: 560;
   letter-spacing: -0.07em;
   line-height: 0.96;
 }
@@ -456,7 +456,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .service-list { border-top: 1px solid var(--line); }
 
 .service-row { display: grid; grid-template-columns: 50px 1fr auto; align-items: center; gap: 1rem; min-height: 95px; border-bottom: 1px solid var(--line); }
-.service-row strong { color: var(--ink); font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.15rem, 1.7vw, 1.65rem); font-weight: 400; letter-spacing: -0.03em; }
+.service-row strong { color: var(--ink); font-family: var(--font-geist-sans), Arial, sans-serif; font-size: clamp(1.15rem, 1.7vw, 1.65rem); font-weight: 600; letter-spacing: -0.03em; }
 .service-row svg { color: var(--copper); transition: transform 180ms ease; }
 .service-row:hover svg { transform: translate(3px, -3px); }
 
@@ -634,14 +634,14 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .partner-title {
   margin: 1.2rem 0 1.35rem;
   color: white;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
   font-size: clamp(3.6rem, 7vw, 7.1rem);
-  font-weight: 400;
-  letter-spacing: -0.075em;
+  font-weight: 560;
+  letter-spacing: -0.065em;
   line-height: 0.9;
 }
 
-.partner-title span { color: var(--copper); font-style: italic; }
+.partner-title span { color: var(--copper); font-style: normal; font-weight: 680; }
 
 .partner-description {
   max-width: 510px;
@@ -716,7 +716,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 
 .partner-card:hover { position: relative; z-index: 1; transform: translateY(-7px); background: var(--navy); color: white; }
 .partner-card > span { color: var(--copper); font-size: 0.67rem; font-weight: 750; letter-spacing: 0.12em; }
-.partner-card h3 { margin: auto 0 0.35rem; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.45rem, 2vw, 2rem); font-weight: 400; letter-spacing: -0.04em; line-height: 1.02; }
+.partner-card h3 { margin: auto 0 0.35rem; font-family: var(--font-geist-sans), Arial, sans-serif; font-size: clamp(1.45rem, 2vw, 2rem); font-weight: 600; letter-spacing: -0.04em; line-height: 1.02; }
 .partner-card p { margin: 0; color: var(--muted); font-size: 0.79rem; line-height: 1.5; transition: color 250ms ease; }
 .partner-card:hover p { color: rgba(255, 255, 255, 0.66); }
 .partner-card-line { height: 1px; width: 100%; margin: 1.2rem 0 0.65rem; background: var(--line); transition: background 250ms ease; }
@@ -767,7 +767,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 }
 
 .partner-contact-content { position: relative; z-index: 1; max-width: 760px; }
-.partner-contact h2 { margin: 1.1rem 0 1.25rem; color: white; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(2.9rem, 5vw, 5.3rem); font-weight: 400; letter-spacing: -0.07em; line-height: 0.95; }
+.partner-contact h2 { margin: 1.1rem 0 1.25rem; color: white; font-family: var(--font-geist-sans), Arial, sans-serif; font-size: clamp(2.9rem, 5vw, 5.3rem); font-weight: 560; letter-spacing: -0.06em; line-height: 0.95; }
 .partner-contact-content > p:not(.eyebrow) { max-width: 525px; margin: 0 auto; color: rgba(255, 255, 255, 0.74); font-size: 1rem; line-height: 1.7; }
 .partner-contact .button { margin-top: 2rem; }
 
