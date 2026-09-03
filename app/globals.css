@@ -892,6 +892,42 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   filter: grayscale(1) invert(1) sepia(48%) saturate(990%) hue-rotate(102deg) brightness(93%) contrast(93%);
 }
 
+/* Static brand tints keep the client grid lively without changing on hover. */
+.partner-client-card:nth-child(2) img,
+.partner-client-card:nth-child(3) img {
+  filter: grayscale(1) invert(1) sepia(70%) saturate(930%) hue-rotate(2deg) brightness(106%) contrast(94%);
+}
+.partner-client-card:nth-child(4) img {
+  filter: grayscale(1) invert(1) sepia(39%) saturate(1250%) hue-rotate(106deg) brightness(94%) contrast(93%);
+}
+.partner-client-card:nth-child(5) img,
+.partner-client-card:nth-child(6) img,
+.partner-client-card:nth-child(7) img,
+.partner-client-card:nth-child(15) img {
+  filter: grayscale(1) invert(1) sepia(51%) saturate(950%) hue-rotate(173deg) brightness(100%) contrast(95%);
+}
+.partner-client-card:nth-child(8) img,
+.partner-client-card:nth-child(12) img,
+.partner-client-card:nth-child(13) img {
+  filter: grayscale(1) invert(1) sepia(64%) saturate(2420%) hue-rotate(333deg) brightness(100%) contrast(93%);
+}
+.partner-client-card:nth-child(9) img,
+.partner-client-card:nth-child(14) img,
+.partner-client-card:nth-child(19) img {
+  filter: grayscale(1) invert(1) sepia(45%) saturate(1280%) hue-rotate(133deg) brightness(98%) contrast(93%);
+}
+.partner-client-card:nth-child(10) img {
+  filter: grayscale(1) invert(1) sepia(48%) saturate(1220%) hue-rotate(294deg) brightness(103%) contrast(93%);
+}
+.partner-client-card:nth-child(11) img,
+.partner-client-card:nth-child(17) img {
+  filter: grayscale(1) invert(1) sepia(31%) saturate(1680%) hue-rotate(220deg) brightness(106%) contrast(92%);
+}
+.partner-client-card:nth-child(18) img {
+  filter: grayscale(1) invert(1) sepia(56%) saturate(970%) hue-rotate(71deg) brightness(100%) contrast(92%);
+}
+.partner-client-card.client-logo-amdocs img { object-position: center 58%; }
+
 .partner-method {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(440px, 1.2fr);
