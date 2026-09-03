@@ -846,7 +846,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(20, 1fr);
   gap: 1px;
   margin-top: clamp(3.5rem, 6vw, 6rem);
   border: 1px solid rgba(255, 212, 228, 0.2);
@@ -854,7 +854,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 }
 
 .partner-client-card {
-  grid-column: span 3;
+  grid-column: span 4;
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-rows: 1fr auto;
@@ -862,7 +862,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   padding: 1.25rem;
   background: rgba(40, 8, 23, 0.78);
 }
-.partner-client-card:nth-last-child(-n + 3) { grid-column: span 4; }
+.partner-client-card:nth-last-child(-n + 4) { grid-column: span 5; }
 
 .partner-client-card > span { color: #ffd4e4; font-size: 0.64rem; font-weight: 750; letter-spacing: 0.12em; }
 .partner-client-card img { align-self: center; justify-self: center; grid-column: 1 / -1; max-width: min(78%, 205px); max-height: 66px; object-fit: contain; filter: grayscale(1) invert(1); mix-blend-mode: screen; opacity: 0.95; }
@@ -991,7 +991,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   .partner-logo-stage { display: none; }
   .partner-directory-heading, .partner-clients-heading, .partner-method { grid-template-columns: 1fr; gap: 2.2rem; }
   .partner-grid, .partner-clients-grid { grid-template-columns: repeat(3, 1fr); }
-  .partner-client-card, .partner-client-card:nth-last-child(-n + 3) { grid-column: span 1; }
+  .partner-client-card, .partner-client-card:nth-last-child(-n + 4) { grid-column: span 1; }
   .partner-method-list { max-width: 690px; }
 }
 
