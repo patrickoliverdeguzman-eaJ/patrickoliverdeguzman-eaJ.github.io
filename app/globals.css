@@ -897,6 +897,38 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .partner-client-card:hover img { filter: var(--client-filter); opacity: 1; transform: scale(1.04); }
 .partner-client-card:hover > span, .partner-client-card:hover small { color: var(--client-accent); }
 
+/* Exact client artwork supplied for this site. */
+.partner-client-card.client-logo-amdocs {
+  --client-accent: #30314a;
+  --client-surface: #fff;
+  --client-filter: none;
+  background: #fff;
+}
+.partner-client-card.client-logo-amdocs > span,
+.partner-client-card.client-logo-amdocs small { color: #5c4760; }
+.partner-client-card.client-logo-amdocs img {
+  width: min(78%, 205px);
+  height: 66px;
+  max-height: none;
+  object-fit: cover;
+  object-position: center;
+  filter: none;
+  opacity: 1;
+}
+.partner-client-card.client-logo-league {
+  --client-accent: #d3af00;
+  --client-surface: #161616;
+  --client-filter: none;
+  background: #161616;
+}
+.partner-client-card.client-logo-league img {
+  width: 104px;
+  max-width: 104px;
+  max-height: 104px;
+  filter: none;
+  opacity: 1;
+}
+
 .partner-method {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(440px, 1.2fr);

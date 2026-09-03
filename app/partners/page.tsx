@@ -16,56 +16,26 @@ const partners = [
 type ValuedClient = {
   name: string;
   logo: string;
+  logoClass?: string;
 };
 
 const valuedClients: ValuedClient[] = [
-  {
-    name: 'Meralco',
-    logo: 'https://static.wixstatic.com/media/58bb01_f683e02a51c44221a7c11175416f6275~mv2.png/v1/fill/w_124%2Ch_103%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Meralco_Logo_Grey.png',
-  },
-  {
-    name: 'PLDT & Smart',
-    logo: 'https://static.wixstatic.com/media/58bb01_88006dd2d72947ca93d72e320049efbb~mv2.png/v1/crop/x_45%2Cy_0%2Cw_1094%2Ch_228/fill/w_245%2Ch_51%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/PLDT%26Smart_Logo_Grey.png',
-  },
-  {
-    name: 'Home Credit',
-    logo: 'https://static.wixstatic.com/media/58bb01_f895c5145c0b4edfa4bfa8b83b0ff5a9~mv2.png/v1/fill/w_152%2Ch_95%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Home_Credit_Logo_Grey.png',
-  },
-  {
-    name: 'Puregold',
-    logo: 'https://static.wixstatic.com/media/58bb01_97b7bc89a7af40868290713678d10998~mv2.png/v1/fill/w_296%2Ch_77%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Puregold_Logo_Grey.png',
-  },
-  {
-    name: 'PNOC',
-    logo: 'https://static.wixstatic.com/media/58bb01_d10db4ee4eef48e288cd56b4d4110b88~mv2.png/v1/fill/w_225%2Ch_150%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/PNOC_Logo_Grey.png',
-  },
-  {
-    name: 'Philippine Ports Authority',
-    logo: 'https://static.wixstatic.com/media/58bb01_bab42d751e3f46f3a6626be385cd0d7a~mv2.png/v1/fill/w_191%2Ch_166%2Cal_c%2Clg_1%2Cq_85%2Cenc_avif%2Cquality_auto/PPA_Logo_Grey.png',
-  },
-  {
-    name: 'CTBC Bank',
-    logo: 'https://static.wixstatic.com/media/58bb01_47f41598de934966b8e80c9428d97865~mv2.png/v1/fill/w_291%2Ch_59%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/CTBC_Bank_Logo_Grey.png',
-  },
-  {
-    name: 'Securities and Exchange Commission',
-    logo: 'https://static.wixstatic.com/media/58bb01_14ab935bac9e46d0ac874805e0ddebf1~mv2.png/v1/fill/w_150%2Ch_150%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/SEC_Logo_Grey.png',
-  },
-  {
-    name: 'Development Bank of the Philippines',
-    logo: 'https://static.wixstatic.com/media/58bb01_f4612926f241461699f3dbba86fdf907~mv2.png/v1/fill/w_139%2Ch_126%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/DBP_Logo_Grey.png',
-  },
   {
     name: 'Government Service Insurance System',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Government_Service_Insurance_System_%28Philippines%29_%28logo%29.svg/1920px-Government_Service_Insurance_System_%28Philippines%29_%28logo%29.svg.png',
   },
   {
     name: 'League One Finance and Leasing Corporation',
-    logo: 'https://www.leagueone.com.ph/wp-content/uploads/2023/03/1withyou-rage.png',
+    logo: '/client-logos/league-one-reference.png',
+    logoClass: 'client-logo-league',
   },
   {
     name: 'Bangko Sentral ng Pilipinas',
     logo: 'https://images.seeklogo.com/logo-png/1/1/bangko-sentral-ng-pilipinas-logo-png_seeklogo-16217.png',
+  },
+  {
+    name: 'Securities and Exchange Commission',
+    logo: 'https://static.wixstatic.com/media/58bb01_14ab935bac9e46d0ac874805e0ddebf1~mv2.png/v1/fill/w_150%2Ch_150%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/SEC_Logo_Grey.png',
   },
   {
     name: 'Office of the President of the Philippines',
@@ -86,6 +56,10 @@ const valuedClients: ValuedClient[] = [
   {
     name: 'NextVAS',
     logo: 'https://sgpgrid.com/pics/logo/6/37/8526f2d23e14e091663065c92c088',
+  },
+  {
+    name: 'Home Credit',
+    logo: 'https://static.wixstatic.com/media/58bb01_f895c5145c0b4edfa4bfa8b83b0ff5a9~mv2.png/v1/fill/w_152%2Ch_95%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Home_Credit_Logo_Grey.png',
   },
   {
     name: 'ADP Pharma',
@@ -113,7 +87,8 @@ const valuedClients: ValuedClient[] = [
   },
   {
     name: 'Amdocs',
-    logo: 'https://freepngdesign.com/content/uploads/images/p-254-5-amdocs-logo-png-transparent-logo-349360204213.png',
+    logo: '/client-logos/amdocs-reference.png',
+    logoClass: 'client-logo-amdocs',
   },
   {
     name: '7-Eleven',
@@ -247,7 +222,7 @@ export default function PartnersPage() {
 
         <div className="partner-clients-grid" aria-label="Selected valued clients">
           {valuedClients.map((client, index) => (
-            <article className="partner-client-card reveal" key={client.name}>
+            <article className={`partner-client-card reveal ${client.logoClass ?? ''}`} key={client.name}>
               <span>{String(index + 1).padStart(2, '0')}</span>
               <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
               <small>{client.name}</small>
