@@ -88,7 +88,8 @@ const valuedClients: ValuedClient[] = [
   },
   {
     name: 'Hitachi Digital Services',
-    logo: 'https://partnerfinder.sap.com/sap/details/api/media/storage/0003054642/86f70a3e-f8f8-4ebf-8399-c149c6e484cf.png',
+    logo: '/client-logos/hitachi-digital-services-reference.png',
+    logoClass: 'client-logo-wide-white',
   },
   {
     name: 'Amdocs',
