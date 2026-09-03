@@ -853,15 +853,6 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   background: rgba(255, 212, 228, 0.2);
 }
 
-.partner-client-card:nth-child(1) { --client-accent: #e87722; --client-surface: #fff4e8; --client-filter: brightness(0) saturate(100%) invert(52%) sepia(71%) saturate(1118%) hue-rotate(345deg) brightness(96%) contrast(94%); }
-.partner-client-card:nth-child(2) { --client-accent: #e02d2d; --client-surface: #fff0f0; --client-filter: brightness(0) saturate(100%) invert(17%) sepia(96%) saturate(4203%) hue-rotate(349deg) brightness(93%) contrast(103%); }
-.partner-client-card:nth-child(3) { --client-accent: #d61970; --client-surface: #fff0f7; --client-filter: brightness(0) saturate(100%) invert(17%) sepia(99%) saturate(4382%) hue-rotate(306deg) brightness(91%) contrast(112%); }
-.partner-client-card:nth-child(4) { --client-accent: #db2f2f; --client-surface: #fff1ef; --client-filter: brightness(0) saturate(100%) invert(17%) sepia(96%) saturate(4203%) hue-rotate(349deg) brightness(93%) contrast(103%); }
-.partner-client-card:nth-child(5) { --client-accent: #2969a8; --client-surface: #eef5ff; --client-filter: brightness(0) saturate(100%) invert(37%) sepia(70%) saturate(946%) hue-rotate(171deg) brightness(91%) contrast(91%); }
-.partner-client-card:nth-child(6) { --client-accent: #2478b8; --client-surface: #edf7ff; --client-filter: brightness(0) saturate(100%) invert(42%) sepia(75%) saturate(855%) hue-rotate(167deg) brightness(88%) contrast(91%); }
-.partner-client-card:nth-child(7) { --client-accent: #c1263b; --client-surface: #fff0f2; --client-filter: brightness(0) saturate(100%) invert(16%) sepia(81%) saturate(3634%) hue-rotate(335deg) brightness(83%) contrast(100%); }
-.partner-client-card:nth-child(8) { --client-accent: #2464a5; --client-surface: #edf5ff; --client-filter: brightness(0) saturate(100%) invert(32%) sepia(34%) saturate(1936%) hue-rotate(174deg) brightness(89%) contrast(91%); }
-.partner-client-card:nth-child(9) { --client-accent: #16804e; --client-surface: #edf9f2; --client-filter: brightness(0) saturate(100%) invert(38%) sepia(29%) saturate(1459%) hue-rotate(102deg) brightness(90%) contrast(92%); }
 .partner-client-card:nth-child(5n + 0) { --client-accent: #be2851; --client-surface: #fff0f5; }
 .partner-client-card:nth-child(5n + 1) { --client-accent: #8d5727; --client-surface: #fff7ed; }
 .partner-client-card:nth-child(5n + 2) { --client-accent: #28689f; --client-surface: #eef6ff; }
@@ -898,6 +889,16 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .partner-client-card:hover > span, .partner-client-card:hover small { color: var(--client-accent); }
 
 /* Exact client artwork supplied for this site. */
+.partner-client-card.client-logo-gsis {
+  --client-accent: #ffd426;
+  --client-surface: #123fa6;
+  --client-filter: none;
+  background: #123fa6;
+}
+.partner-client-card.client-logo-gsis > span,
+.partner-client-card.client-logo-gsis small { color: rgba(255, 255, 255, 0.84); }
+.partner-client-card.client-logo-gsis img { filter: none; opacity: 1; }
+
 .partner-client-card.client-logo-amdocs {
   --client-accent: #30314a;
   --client-surface: #fff;
@@ -928,6 +929,32 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   filter: none;
   opacity: 1;
 }
+.partner-client-card.client-logo-wide-white {
+  --client-accent: #06467d;
+  --client-surface: #fff;
+  --client-filter: none;
+  background: #fff;
+}
+.partner-client-card.client-logo-wide-white > span,
+.partner-client-card.client-logo-wide-white small { color: #5c6470; }
+.partner-client-card.client-logo-wide-white img {
+  width: min(78%, 205px);
+  height: 66px;
+  max-height: none;
+  object-fit: cover;
+  object-position: center;
+  filter: none;
+  opacity: 1;
+}
+.partner-client-card.client-logo-systra {
+  --client-accent: #fff;
+  --client-surface: #df2029;
+  --client-filter: none;
+  background: #df2029;
+}
+.partner-client-card.client-logo-systra > span,
+.partner-client-card.client-logo-systra small { color: rgba(255, 255, 255, 0.84); }
+.partner-client-card.client-logo-systra img { filter: none; opacity: 1; }
 
 .partner-method {
   display: grid;

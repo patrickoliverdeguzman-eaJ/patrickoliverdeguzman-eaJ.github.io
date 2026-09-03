@@ -22,7 +22,8 @@ type ValuedClient = {
 const valuedClients: ValuedClient[] = [
   {
     name: 'Government Service Insurance System',
-    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Government_Service_Insurance_System_%28Philippines%29_%28logo%29.svg/1920px-Government_Service_Insurance_System_%28Philippines%29_%28logo%29.svg.png',
+    logo: '/client-logos/gsis-reference.png',
+    logoClass: 'client-logo-gsis',
   },
   {
     name: 'League One Finance and Leasing Corporation',
@@ -31,31 +32,34 @@ const valuedClients: ValuedClient[] = [
   },
   {
     name: 'Bangko Sentral ng Pilipinas',
-    logo: 'https://images.seeklogo.com/logo-png/1/1/bangko-sentral-ng-pilipinas-logo-png_seeklogo-16217.png',
+    logo: '/client-logos/bsp-reference.png',
   },
   {
     name: 'Securities and Exchange Commission',
-    logo: 'https://static.wixstatic.com/media/58bb01_14ab935bac9e46d0ac874805e0ddebf1~mv2.png/v1/fill/w_150%2Ch_150%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/SEC_Logo_Grey.png',
+    logo: '/client-logos/sec-reference.png',
   },
   {
     name: 'Office of the President of the Philippines',
-    logo: 'https://www.gobyerno.com/custom/domain_3/image_files/sitemgr_photo_66.png',
+    logo: '/client-logos/op-malacanang-reference.png',
   },
   {
     name: 'Global Payments',
-    logo: 'https://mms.businesswire.com/media/20241202998309/en/1093034/22/GlobalPayments_Wordmark_RGB.jpg',
+    logo: '/client-logos/global-payments-reference.png',
+    logoClass: 'client-logo-wide-white',
   },
   {
     name: 'Credit Information Corporation',
-    logo: 'https://www.creditinfo.gov.ph/dispute/img/CICLogo.png',
+    logo: '/client-logos/credit-information-reference.png',
+    logoClass: 'client-logo-wide-white',
   },
   {
     name: 'SYSTRA Philippines',
-    logo: 'https://freepngdesign.com/content/uploads/images/p22-9-systra-6198826688.png',
+    logo: '/client-logos/systra-reference.png',
+    logoClass: 'client-logo-systra',
   },
   {
     name: 'NextVAS',
-    logo: 'https://sgpgrid.com/pics/logo/6/37/8526f2d23e14e091663065c92c088',
+    logo: '/client-logos/nextvas-reference.png',
   },
   {
     name: 'Home Credit',
