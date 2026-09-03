@@ -70,11 +70,11 @@ export default function PartnersPage() {
           <div className="partner-hero-copy">
             <p className="eyebrow hero-reveal">Partner ecosystem</p>
             <h1 className="partner-title hero-reveal">
-              Technology gets <span>stronger</span> together.
+              Integration starts with the <span>right ecosystem.</span>
             </h1>
             <p className="partner-description hero-reveal">
-              We bring specialised technology together with local integration expertise
-              so every piece of your environment can work as one.
+              INFOStorage works with global product brands and enterprise solution providers
+              to deliver technology stacks that fit the way your organisation operates.
             </p>
             <a className="button button-primary hero-reveal" href="#partner-directory">
               Explore the ecosystem <ArrowRight size={18} />
@@ -163,8 +163,8 @@ export default function PartnersPage() {
         <a href="/" className="brand footer-brand partner-footer-brand" aria-label="INFOStorage home">
           <img className="footer-logo" src="/infostorage-logo.png" alt="INFOStorage Corporation" />
         </a>
-        <p>Enterprise-class solutions for data computing operations.</p>
-        <span>© {new Date().getFullYear()} INFOStorage Corporation</span>
+        <p>1101 AIC Burgundy Empire Tower, Ortigas Center, Pasig City</p>
+        <span>© 2025 INFOStorage Corporation</span>
       </footer>
     </main>
   );
