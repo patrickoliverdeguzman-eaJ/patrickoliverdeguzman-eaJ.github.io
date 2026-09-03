@@ -15,7 +15,7 @@ const partners = [
 
 type ValuedClient = {
   name: string;
-  logo?: string;
+  logo: string;
 };
 
 const valuedClients: ValuedClient[] = [
@@ -55,23 +55,74 @@ const valuedClients: ValuedClient[] = [
     name: 'Development Bank of the Philippines',
     logo: 'https://static.wixstatic.com/media/58bb01_f4612926f241461699f3dbba86fdf907~mv2.png/v1/fill/w_139%2Ch_126%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/DBP_Logo_Grey.png',
   },
-  { name: 'Government Service Insurance System' },
-  { name: 'League One Finance and Leasing Corporation' },
-  { name: 'Bangko Sentral ng Pilipinas' },
-  { name: 'Office of the President of the Philippines' },
-  { name: 'Global Payments' },
-  { name: 'Credit Information Corporation' },
-  { name: 'SYSTRA Philippines' },
-  { name: 'NextVAS' },
-  { name: 'ADP Pharma' },
-  { name: 'San-Yang Furniture' },
-  { name: 'JINS' },
-  { name: 'DENR Biodiversity Management Bureau' },
-  { name: 'One Cainta' },
-  { name: 'Hitachi Digital Services' },
-  { name: 'Amdocs' },
-  { name: '7-Eleven' },
-  { name: 'Cathay United Bank' },
+  {
+    name: 'Government Service Insurance System',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1f/Government_Service_Insurance_System_%28Philippines%29_%28logo%29.svg/1920px-Government_Service_Insurance_System_%28Philippines%29_%28logo%29.svg.png',
+  },
+  {
+    name: 'League One Finance and Leasing Corporation',
+    logo: 'https://www.leagueone.com.ph/wp-content/uploads/2023/03/1withyou-rage.png',
+  },
+  {
+    name: 'Bangko Sentral ng Pilipinas',
+    logo: 'https://images.seeklogo.com/logo-png/1/1/bangko-sentral-ng-pilipinas-logo-png_seeklogo-16217.png',
+  },
+  {
+    name: 'Office of the President of the Philippines',
+    logo: 'https://www.gobyerno.com/custom/domain_3/image_files/sitemgr_photo_66.png',
+  },
+  {
+    name: 'Global Payments',
+    logo: 'https://mms.businesswire.com/media/20241202998309/en/1093034/22/GlobalPayments_Wordmark_RGB.jpg',
+  },
+  {
+    name: 'Credit Information Corporation',
+    logo: 'https://www.creditinfo.gov.ph/dispute/img/CICLogo.png',
+  },
+  {
+    name: 'SYSTRA Philippines',
+    logo: 'https://freepngdesign.com/content/uploads/images/p22-9-systra-6198826688.png',
+  },
+  {
+    name: 'NextVAS',
+    logo: 'https://sgpgrid.com/pics/logo/6/37/8526f2d23e14e091663065c92c088',
+  },
+  {
+    name: 'ADP Pharma',
+    logo: 'https://www.adppharma.com/wp-content/uploads/2022/05/adp-logo.png',
+  },
+  {
+    name: 'San-Yang Furniture',
+    logo: 'https://pbs.twimg.com/profile_images/704835910391599104/Brmm68EG.jpg',
+  },
+  {
+    name: 'JINS',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/JINS_Logo.svg/3840px-JINS_Logo.svg.png',
+  },
+  {
+    name: 'DENR Biodiversity Management Bureau',
+    logo: 'https://pais.bmb.gov.ph/bmb_assets2/img/website/logo/bmb-denr-logo.png',
+  },
+  {
+    name: 'One Cainta',
+    logo: 'https://static.wixstatic.com/media/4c5595_7b90b770099845418576b7ff1bb463db~mv2.png/v1/fit/w_2500%2Ch_1330%2Cal_c/4c5595_7b90b770099845418576b7ff1bb463db~mv2.png',
+  },
+  {
+    name: 'Hitachi Digital Services',
+    logo: 'https://partnerfinder.sap.com/sap/details/api/media/storage/0003054642/86f70a3e-f8f8-4ebf-8399-c149c6e484cf.png',
+  },
+  {
+    name: 'Amdocs',
+    logo: 'https://freepngdesign.com/content/uploads/images/p-254-5-amdocs-logo-png-transparent-logo-349360204213.png',
+  },
+  {
+    name: '7-Eleven',
+    logo: 'https://www.clipartmax.com/png/middle/58-586690_7-eleven-brand-logo-7-11-logo.png',
+  },
+  {
+    name: 'Cathay United Bank',
+    logo: 'https://www.singaporeair.com/content/dam/sia/web-assets/images/ppsclub-krisflyer/earn-miles/earnontheground/financial-services-partners/cathayunitedbanktaiwan/CathayUnitedBanklogo_1240x%20400.png',
+  },
 ];
 
 export const metadata: Metadata = {
@@ -198,11 +249,7 @@ export default function PartnersPage() {
           {valuedClients.map((client, index) => (
             <article className="partner-client-card reveal" key={client.name}>
               <span>{String(index + 1).padStart(2, '0')}</span>
-              {client.logo ? (
-                <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
-              ) : (
-                <strong className="partner-client-wordmark">{client.name}</strong>
-              )}
+              <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
               <small>{client.name}</small>
             </article>
           ))}
