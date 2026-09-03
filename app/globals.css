@@ -955,6 +955,16 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .partner-client-card.client-logo-systra > span,
 .partner-client-card.client-logo-systra small { color: rgba(255, 255, 255, 0.84); }
 .partner-client-card.client-logo-systra img { filter: none; opacity: 1; }
+.partner-client-card.client-logo-denr {
+  --client-accent: #2f9fca;
+  --client-surface: #effaff;
+  --client-filter: none;
+}
+.partner-client-card.client-logo-denr img {
+  clip-path: circle(44% at 50% 50%);
+  filter: none;
+  opacity: 1;
+}
 
 .partner-method {
   display: grid;

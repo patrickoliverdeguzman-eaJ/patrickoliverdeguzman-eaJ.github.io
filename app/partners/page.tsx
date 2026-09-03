@@ -79,7 +79,8 @@ const valuedClients: ValuedClient[] = [
   },
   {
     name: 'DENR Biodiversity Management Bureau',
-    logo: 'https://pais.bmb.gov.ph/bmb_assets2/img/website/logo/bmb-denr-logo.png',
+    logo: '/client-logos/denr-reference.png',
+    logoClass: 'client-logo-denr',
   },
   {
     name: 'One Cainta',
