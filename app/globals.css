@@ -853,117 +853,35 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   background: rgba(255, 212, 228, 0.2);
 }
 
-.partner-client-card:nth-child(5n + 0) { --client-accent: #be2851; --client-surface: #fff0f5; }
-.partner-client-card:nth-child(5n + 1) { --client-accent: #8d5727; --client-surface: #fff7ed; }
-.partner-client-card:nth-child(5n + 2) { --client-accent: #28689f; --client-surface: #eef6ff; }
-.partner-client-card:nth-child(5n + 3) { --client-accent: #4d8a53; --client-surface: #eff9ef; }
-.partner-client-card:nth-child(5n + 4) { --client-accent: #734093; --client-surface: #f6effd; }
-.partner-client-card:nth-child(1) { --client-accent: #e87722; --client-surface: #fff4e8; }
-.partner-client-card:nth-child(2) { --client-accent: #e02d2d; --client-surface: #fff0f0; }
-.partner-client-card:nth-child(3) { --client-accent: #d61970; --client-surface: #fff0f7; }
-.partner-client-card:nth-child(4) { --client-accent: #db2f2f; --client-surface: #fff1ef; }
-.partner-client-card:nth-child(5) { --client-accent: #2969a8; --client-surface: #eef5ff; }
-.partner-client-card:nth-child(6) { --client-accent: #2478b8; --client-surface: #edf7ff; }
-.partner-client-card:nth-child(7) { --client-accent: #c1263b; --client-surface: #fff0f2; }
-.partner-client-card:nth-child(8) { --client-accent: #2464a5; --client-surface: #edf5ff; }
-.partner-client-card:nth-child(9) { --client-accent: #16804e; --client-surface: #edf9f2; }
-
 .partner-client-card {
-  --client-accent: #ffd4e4;
-  --client-surface: #fffafd;
-  --client-filter: none;
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-rows: 1fr auto;
   min-height: 184px;
   padding: 1.25rem;
   background: rgba(40, 8, 23, 0.78);
-  transition: background 250ms ease, color 250ms ease, transform 250ms cubic-bezier(.2,.8,.2,1);
 }
 
 .partner-client-card > span { color: #ffd4e4; font-size: 0.64rem; font-weight: 750; letter-spacing: 0.12em; }
-.partner-client-card img { align-self: center; justify-self: center; grid-column: 1 / -1; max-width: min(78%, 205px); max-height: 66px; object-fit: contain; filter: grayscale(1) brightness(0) invert(1); opacity: 0.84; transition: filter 250ms ease, opacity 250ms ease, transform 250ms ease; }
-.partner-client-card small { grid-column: 1 / -1; color: rgba(255, 255, 255, 0.58); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.09em; line-height: 1.3; text-transform: uppercase; transition: color 250ms ease; }
-.partner-client-card:hover { position: relative; z-index: 1; transform: translateY(-7px); background: var(--client-surface); color: var(--client-accent); }
-.partner-client-card:hover img { filter: var(--client-filter); opacity: 1; transform: scale(1.04); }
-.partner-client-card:hover > span, .partner-client-card:hover small { color: var(--client-accent); }
+.partner-client-card img { align-self: center; justify-self: center; grid-column: 1 / -1; max-width: min(78%, 205px); max-height: 66px; object-fit: contain; filter: grayscale(1) invert(1); mix-blend-mode: screen; opacity: 0.95; }
+.partner-client-card small { grid-column: 1 / -1; color: rgba(255, 255, 255, 0.58); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.09em; line-height: 1.3; text-transform: uppercase; }
 
-/* Exact client artwork supplied for this site. */
+/* Background-free treatment for the client artwork supplied for this site. */
 .partner-client-card.client-logo-gsis {
-  --client-accent: #ffd426;
-  --client-surface: #123fa6;
-  --client-filter: none;
-  background: #123fa6;
-}
-.partner-client-card.client-logo-gsis > span,
-.partner-client-card.client-logo-gsis small { color: rgba(255, 255, 255, 0.84); }
-.partner-client-card.client-logo-gsis img { filter: none; opacity: 1; }
-
-.partner-client-card.client-logo-amdocs {
-  --client-accent: #30314a;
-  --client-surface: #fff;
-  --client-filter: none;
-  background: #fff;
-}
-.partner-client-card.client-logo-amdocs > span,
-.partner-client-card.client-logo-amdocs small { color: #5c4760; }
-.partner-client-card.client-logo-amdocs img {
-  width: min(78%, 205px);
-  height: 66px;
-  max-height: none;
-  object-fit: cover;
-  object-position: center;
+  clip-path: circle(45% at 50% 50%);
   filter: none;
-  opacity: 1;
+  mix-blend-mode: normal;
 }
-.partner-client-card.client-logo-league {
-  --client-accent: #d3af00;
-  --client-surface: #161616;
-  --client-filter: none;
-  background: #161616;
-}
-.partner-client-card.client-logo-league img {
-  width: 104px;
-  max-width: 104px;
-  max-height: 104px;
-  filter: none;
-  opacity: 1;
-}
-.partner-client-card.client-logo-wide-white {
-  --client-accent: #06467d;
-  --client-surface: #fff;
-  --client-filter: none;
-  background: #fff;
-}
-.partner-client-card.client-logo-wide-white > span,
-.partner-client-card.client-logo-wide-white small { color: #5c6470; }
+.partner-client-card.client-logo-amdocs img,
 .partner-client-card.client-logo-wide-white img {
   width: min(78%, 205px);
   height: 66px;
   max-height: none;
   object-fit: cover;
   object-position: center;
-  filter: none;
-  opacity: 1;
-}
-.partner-client-card.client-logo-systra {
-  --client-accent: #fff;
-  --client-surface: #df2029;
-  --client-filter: none;
-  background: #df2029;
-}
-.partner-client-card.client-logo-systra > span,
-.partner-client-card.client-logo-systra small { color: rgba(255, 255, 255, 0.84); }
-.partner-client-card.client-logo-systra img { filter: none; opacity: 1; }
-.partner-client-card.client-logo-denr {
-  --client-accent: #2f9fca;
-  --client-surface: #effaff;
-  --client-filter: none;
 }
 .partner-client-card.client-logo-denr img {
   clip-path: circle(44% at 50% 50%);
-  filter: none;
-  opacity: 1;
 }
 
 .partner-method {

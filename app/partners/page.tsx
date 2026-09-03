@@ -54,8 +54,7 @@ const valuedClients: ValuedClient[] = [
   },
   {
     name: 'SYSTRA Philippines',
-    logo: '/client-logos/systra-reference.png',
-    logoClass: 'client-logo-systra',
+    logo: 'https://images.seeklogo.com/logo-png/50/1/systra-logo-png_seeklogo-505360.png',
   },
   {
     name: 'NextVAS',
