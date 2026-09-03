@@ -13,7 +13,12 @@ const partners = [
   { name: 'StorageTek', focus: 'Enterprise tape & storage' },
 ];
 
-const valuedClients = [
+type ValuedClient = {
+  name: string;
+  logo?: string;
+};
+
+const valuedClients: ValuedClient[] = [
   {
     name: 'Meralco',
     logo: 'https://static.wixstatic.com/media/58bb01_f683e02a51c44221a7c11175416f6275~mv2.png/v1/fill/w_124%2Ch_103%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Meralco_Logo_Grey.png',
@@ -50,6 +55,23 @@ const valuedClients = [
     name: 'Development Bank of the Philippines',
     logo: 'https://static.wixstatic.com/media/58bb01_f4612926f241461699f3dbba86fdf907~mv2.png/v1/fill/w_139%2Ch_126%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/DBP_Logo_Grey.png',
   },
+  { name: 'Government Service Insurance System' },
+  { name: 'League One Finance and Leasing Corporation' },
+  { name: 'Bangko Sentral ng Pilipinas' },
+  { name: 'Office of the President of the Philippines' },
+  { name: 'Global Payments' },
+  { name: 'Credit Information Corporation' },
+  { name: 'SYSTRA Philippines' },
+  { name: 'NextVAS' },
+  { name: 'ADP Pharma' },
+  { name: 'San-Yang Furniture' },
+  { name: 'JINS' },
+  { name: 'DENR Biodiversity Management Bureau' },
+  { name: 'One Cainta' },
+  { name: 'Hitachi Digital Services' },
+  { name: 'Amdocs' },
+  { name: '7-Eleven' },
+  { name: 'Cathay United Bank' },
 ];
 
 export const metadata: Metadata = {
@@ -176,7 +198,11 @@ export default function PartnersPage() {
           {valuedClients.map((client, index) => (
             <article className="partner-client-card reveal" key={client.name}>
               <span>{String(index + 1).padStart(2, '0')}</span>
-              <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
+              {client.logo ? (
+                <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
+              ) : (
+                <strong className="partner-client-wordmark">{client.name}</strong>
+              )}
               <small>{client.name}</small>
             </article>
           ))}
