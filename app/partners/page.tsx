@@ -98,10 +98,12 @@ const valuedClients: ValuedClient[] = [
   {
     name: '7-Eleven',
     logo: 'https://www.clipartmax.com/png/middle/58-586690_7-eleven-brand-logo-7-11-logo.png',
+    logoClass: 'client-logo-7eleven',
   },
   {
     name: 'Cathay United Bank',
     logo: 'https://www.singaporeair.com/content/dam/sia/web-assets/images/ppsclub-krisflyer/earn-miles/earnontheground/financial-services-partners/cathayunitedbanktaiwan/CathayUnitedBanklogo_1240x%20400.png',
+    logoClass: 'client-logo-cathay',
   },
 ];
 
