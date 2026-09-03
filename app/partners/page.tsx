@@ -13,6 +13,45 @@ const partners = [
   { name: 'StorageTek', focus: 'Enterprise tape & storage' },
 ];
 
+const valuedClients = [
+  {
+    name: 'Meralco',
+    logo: 'https://static.wixstatic.com/media/58bb01_f683e02a51c44221a7c11175416f6275~mv2.png/v1/fill/w_124%2Ch_103%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Meralco_Logo_Grey.png',
+  },
+  {
+    name: 'PLDT & Smart',
+    logo: 'https://static.wixstatic.com/media/58bb01_88006dd2d72947ca93d72e320049efbb~mv2.png/v1/crop/x_45%2Cy_0%2Cw_1094%2Ch_228/fill/w_245%2Ch_51%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/PLDT%26Smart_Logo_Grey.png',
+  },
+  {
+    name: 'Home Credit',
+    logo: 'https://static.wixstatic.com/media/58bb01_f895c5145c0b4edfa4bfa8b83b0ff5a9~mv2.png/v1/fill/w_152%2Ch_95%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Home_Credit_Logo_Grey.png',
+  },
+  {
+    name: 'Puregold',
+    logo: 'https://static.wixstatic.com/media/58bb01_97b7bc89a7af40868290713678d10998~mv2.png/v1/fill/w_296%2Ch_77%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/Puregold_Logo_Grey.png',
+  },
+  {
+    name: 'PNOC',
+    logo: 'https://static.wixstatic.com/media/58bb01_d10db4ee4eef48e288cd56b4d4110b88~mv2.png/v1/fill/w_225%2Ch_150%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/PNOC_Logo_Grey.png',
+  },
+  {
+    name: 'Philippine Ports Authority',
+    logo: 'https://static.wixstatic.com/media/58bb01_bab42d751e3f46f3a6626be385cd0d7a~mv2.png/v1/fill/w_191%2Ch_166%2Cal_c%2Clg_1%2Cq_85%2Cenc_avif%2Cquality_auto/PPA_Logo_Grey.png',
+  },
+  {
+    name: 'CTBC Bank',
+    logo: 'https://static.wixstatic.com/media/58bb01_47f41598de934966b8e80c9428d97865~mv2.png/v1/fill/w_291%2Ch_59%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/CTBC_Bank_Logo_Grey.png',
+  },
+  {
+    name: 'Securities and Exchange Commission',
+    logo: 'https://static.wixstatic.com/media/58bb01_14ab935bac9e46d0ac874805e0ddebf1~mv2.png/v1/fill/w_150%2Ch_150%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/SEC_Logo_Grey.png',
+  },
+  {
+    name: 'Development Bank of the Philippines',
+    logo: 'https://static.wixstatic.com/media/58bb01_f4612926f241461699f3dbba86fdf907~mv2.png/v1/fill/w_139%2Ch_126%2Cal_c%2Cq_85%2Cusm_0.66_1.00_0.01%2Cenc_avif%2Cquality_auto/DBP_Logo_Grey.png',
+  },
+];
+
 export const metadata: Metadata = {
   title: 'Partners | INFOStorage',
   description: 'Explore the INFOStorage technology partner ecosystem.',
@@ -119,6 +158,29 @@ export default function PartnersPage() {
           Technology availability and solution fit can vary by requirement. Talk with
           INFOStorage to identify the most suitable current option for your environment.
         </p>
+      </section>
+
+      <section className="partner-clients section-pad" id="valued-clients">
+        <div className="partner-clients-heading reveal">
+          <div>
+            <p className="section-kicker">Valued clients (partial)</p>
+            <h2>Trusted where the work matters most.</h2>
+          </div>
+          <p>
+            A selection of organisations that have chosen INFOStorage for enterprise
+            technology, integration, and support.
+          </p>
+        </div>
+
+        <div className="partner-clients-grid" aria-label="Selected valued clients">
+          {valuedClients.map((client, index) => (
+            <article className="partner-client-card reveal" key={client.name}>
+              <span>{String(index + 1).padStart(2, '0')}</span>
+              <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
+              <small>{client.name}</small>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className="partner-method section-pad">
