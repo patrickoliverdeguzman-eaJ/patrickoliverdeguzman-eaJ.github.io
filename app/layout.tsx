@@ -1,47 +1,28 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
-
 export const metadata: Metadata = {
-  title: 'INFOStorage | Enterprise Technology, Made Dependable',
-  description:
-    'Enterprise-class systems, security, and data protection solutions from INFOStorage Corporation.',
+  metadataBase: new URL('https://infostorage-enterprise.yasuoxd-yx.chatgpt.site'),
+  title: 'INFOStorage | Enterprise technology, thoughtfully connected',
+  description: 'Enterprise technology solutions across systems, security, data protection, and professional services.',
   openGraph: {
-    title: 'INFOStorage | Enterprise Technology, Made Dependable',
-    description: 'Enterprise-class infrastructure solutions for data computing operations.',
+    title: 'INFOStorage | Enterprise technology, thoughtfully connected',
+    description: 'Systems, security, data protection, and support that work together.',
     type: 'website',
     images: [{ url: '/og.png', width: 1536, height: 1024 }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'INFOStorage | Enterprise Technology, Made Dependable',
-    description: 'Enterprise-class infrastructure solutions for data computing operations.',
+    title: 'INFOStorage | Enterprise technology, thoughtfully connected',
+    description: 'Systems, security, data protection, and support that work together.',
     images: ['/og.png'],
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
