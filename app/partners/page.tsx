@@ -107,6 +107,11 @@ const valuedClients: ValuedClient[] = [
   },
 ];
 
+const valuedClientRows = Array.from(
+  { length: Math.ceil(valuedClients.length / 4) },
+  (_, rowIndex) => valuedClients.slice(rowIndex * 4, rowIndex * 4 + 4),
+);
+
 export const metadata: Metadata = {
   title: 'Partners | INFOStorage',
   description: 'Explore the INFOStorage technology partner ecosystem.',
@@ -228,12 +233,23 @@ export default function PartnersPage() {
         </div>
 
         <div className="partner-clients-grid" aria-label="Selected valued clients">
-          {valuedClients.map((client, index) => (
-            <article className={`partner-client-card reveal ${client.logoClass ?? ''}`} key={client.name}>
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
-              <small>{client.name}</small>
-            </article>
+          {valuedClientRows.map((row, rowIndex) => (
+            <div
+              className={`partner-clients-row ${row.length === 3 ? 'partner-clients-row--proportional' : ''}`}
+              key={row[0].name}
+            >
+              {row.map((client, clientIndex) => {
+                const index = rowIndex * 4 + clientIndex;
+
+                return (
+                  <article className={`partner-client-card reveal ${client.logoClass ?? ''}`} key={client.name}>
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <img src={client.logo} alt={`${client.name} logo`} loading="lazy" />
+                    <small>{client.name}</small>
+                  </article>
+                );
+              })}
+            </div>
           ))}
         </div>
       </section>
