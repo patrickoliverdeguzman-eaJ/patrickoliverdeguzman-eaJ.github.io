@@ -863,6 +863,9 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   background: rgba(40, 8, 23, 0.78);
 }
 
+/* Keep the incomplete final row visually continuous without changing the four-column grid. */
+.partner-client-card:last-child { grid-column: span 2; }
+
 .partner-client-card > span { color: #ffd4e4; font-size: 0.64rem; font-weight: 750; letter-spacing: 0.12em; }
 .partner-client-card img { align-self: center; justify-self: center; grid-column: 1 / -1; max-width: min(78%, 205px); max-height: 66px; object-fit: contain; filter: grayscale(1) invert(1); mix-blend-mode: screen; opacity: 0.95; }
 .partner-client-card small { grid-column: 1 / -1; color: rgba(255, 255, 255, 0.58); font-size: 0.62rem; font-weight: 700; letter-spacing: 0.09em; line-height: 1.3; text-transform: uppercase; }
@@ -990,6 +993,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   .partner-logo-stage { display: none; }
   .partner-directory-heading, .partner-clients-heading, .partner-method { grid-template-columns: 1fr; gap: 2.2rem; }
   .partner-grid, .partner-clients-grid { grid-template-columns: repeat(3, 1fr); }
+  .partner-client-card:last-child { grid-column: span 3; }
   .partner-method-list { max-width: 690px; }
 }
 
@@ -998,6 +1002,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   .partner-title { font-size: clamp(3.4rem, 15vw, 5.2rem); }
   .partner-grid { grid-template-columns: 1fr; }
   .partner-clients-grid { grid-template-columns: 1fr; grid-auto-rows: 150px; }
+  .partner-client-card:last-child { grid-column: auto; }
   .partner-card { min-height: 190px; }
   .partner-method-list > div { grid-template-columns: 34px 1fr; gap: 0.7rem; }
   .partner-method-list p { grid-column: 2; }
