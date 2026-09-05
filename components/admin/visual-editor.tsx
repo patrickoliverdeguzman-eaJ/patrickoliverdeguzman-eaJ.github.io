@@ -374,6 +374,7 @@ export function VisualEditor() {
   const customPages = documents.filter(
     (document) =>
       document.type === 'builder_page' &&
+      document.status !== 'archived' &&
       document.slug !== 'home' &&
       document.slug !== 'partners',
   );
@@ -1532,7 +1533,7 @@ export function VisualEditor() {
                       updateHeaderLinks(selectedDocument.id, [
                         ...selectedHeaderLinks,
                         {
-                          id: `header-link-${Date.now()}`,
+                          id: `header-link-${crypto.randomUUID()}`,
                           label: 'New link',
                           href: '#',
                           enabled: true,

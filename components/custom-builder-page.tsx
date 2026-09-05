@@ -81,7 +81,7 @@ export function CustomBuilderPage() {
             <div className="desktop-links">
               {site.navItems.map((item) => <a key={item.id} href={navHref(item.href)}>{item.label}</a>)}
             </div>
-            <a className="nav-cta" href={site.headerCta.href}>
+            <a className="nav-cta" href={navHref(site.headerCta.href)}>
               {site.headerCta.label} <ArrowUpRight size={16} strokeWidth={2.1} />
             </a>
             <details className="mobile-menu">

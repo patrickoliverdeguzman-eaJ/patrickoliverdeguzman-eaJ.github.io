@@ -162,16 +162,31 @@ function safeProps(value: unknown): BuilderNode['props'] {
   return result;
 }
 
-function normaliseNode(value: unknown, depth = 0): BuilderNode | null {
+function nextUniqueId(knownIds: Set<string>): string {
+  let nextId = id();
+  while (knownIds.has(nextId)) nextId = id();
+  return nextId;
+}
+
+function normaliseNode(
+  value: unknown,
+  depth = 0,
+  knownIds = new Set<string>(),
+): BuilderNode | null {
   if (!isRecord(value) || depth > 8) return null;
   const type = safeChoice(value.type, BUILDER_NODE_TYPES, 'text');
+  const suppliedId = safeText(value.id, '', 80);
+  const nodeId = suppliedId && !knownIds.has(suppliedId)
+    ? suppliedId
+    : nextUniqueId(knownIds);
+  knownIds.add(nodeId);
   const rawChildren = Array.isArray(value.children) ? value.children : [];
   const children = rawChildren
     .slice(0, 30)
-    .map((child) => normaliseNode(child, depth + 1))
+    .map((child) => normaliseNode(child, depth + 1, knownIds))
     .filter((child): child is BuilderNode => Boolean(child));
   return {
-    id: safeText(value.id, id(), 80) || id(),
+    id: nodeId,
     type,
     props: safeProps(value.props),
     styles: {
@@ -214,12 +229,13 @@ function normaliseNode(value: unknown, depth = 0): BuilderNode | null {
 export function normaliseBuilderPage(value: unknown): BuilderPage {
   const page = emptyBuilderPage();
   if (!isRecord(value) || !isRecord(value.slots)) return page;
+  const knownIds = new Set<string>();
   for (const slot of BUILDER_SLOTS) {
     const rawNodes = value.slots[slot.id];
     if (!Array.isArray(rawNodes)) continue;
     page.slots[slot.id] = rawNodes
       .slice(0, 30)
-      .map((node) => normaliseNode(node))
+      .map((node) => normaliseNode(node, 0, knownIds))
       .filter((node): node is BuilderNode => Boolean(node));
   }
   return page;

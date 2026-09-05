@@ -30,6 +30,7 @@ function numberProp(node: BuilderNode, name: string, fallback: number): number {
 
 function safeLink(value: string): string {
   const href = value.trim();
+  if (href.startsWith('//')) return '#';
   if (
     href.startsWith('#') ||
     href.startsWith('/') ||
@@ -49,6 +50,7 @@ function safeLink(value: string): string {
 
 function safeImage(value: string): string | null {
   const src = value.trim();
+  if (src.startsWith('//')) return null;
   if (src.startsWith('/')) return src;
   try {
     const url = new URL(src);
@@ -86,6 +88,9 @@ function BuilderNodeView({
     ? {
         draggable: true,
         onClick: (event: React.MouseEvent<HTMLElement>) => {
+          // Builder buttons render as links in the public site. While editing,
+          // they must select their block rather than navigate away from the CMS.
+          event.preventDefault();
           event.stopPropagation();
           onSelectNode?.(node.id);
         },

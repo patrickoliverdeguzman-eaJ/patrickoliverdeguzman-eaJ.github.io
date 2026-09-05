@@ -93,6 +93,22 @@ const BUILDER_NODE_TYPES = new Set([
   'section', 'container', 'columns', 'column', 'card', 'heading', 'text',
   'image', 'button', 'divider', 'spacer',
 ]);
+const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
+  section: new Set(['label']),
+  container: new Set(['label']),
+  columns: new Set(['columns']),
+  column: new Set(['label']),
+  card: new Set(['label']),
+  heading: new Set(['text', 'level']),
+  text: new Set(['text']),
+  image: new Set(['src', 'alt']),
+  button: new Set(['label', 'href', 'variant']),
+  divider: new Set(['label']),
+  spacer: new Set(['size']),
+};
+const BUILDER_CONTAINER_TYPES = new Set([
+  'section', 'container', 'columns', 'column', 'card',
+]);
 const BUILDER_SLOTS = new Set([
   'afterHero', 'afterApproach', 'afterSolutions', 'afterServices', 'beforeContact', 'afterContent',
 ]);
@@ -199,26 +215,35 @@ function validateSlug(value: unknown): string {
   return slug;
 }
 
-function validateBuilderNode(value: unknown, depth: number): void {
+function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): void {
   if (!isRecord(value) || depth > 8) throw new HttpError(400, 'A builder block has an invalid structure.', 'invalid_input');
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value.id)) throw new HttpError(400, 'A builder block id is invalid.', 'invalid_input');
+  if (ids.has(value.id)) throw new HttpError(400, 'Builder block ids must be unique.', 'invalid_input');
+  ids.add(value.id);
   if (typeof value.type !== 'string' || !BUILDER_NODE_TYPES.has(value.type)) throw new HttpError(400, 'A builder block type is not supported.', 'invalid_input');
+  const type = value.type;
   if (!isRecord(value.props) || Object.keys(value.props).length > 20) throw new HttpError(400, 'Builder block properties are invalid.', 'invalid_input');
   for (const [key, property] of Object.entries(value.props)) {
-    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(key)) throw new HttpError(400, 'A builder property name is invalid.', 'invalid_input');
+    if (!BUILDER_PROP_KEYS[type].has(key)) throw new HttpError(400, 'A builder property is not supported for this block.', 'invalid_input');
     if (!(typeof property === 'string' || typeof property === 'boolean' || (typeof property === 'number' && Number.isFinite(property))) || (typeof property === 'string' && property.length > 2_000)) throw new HttpError(400, 'A builder property value is invalid.', 'invalid_input');
   }
+  if (type === 'heading' && value.props.level !== undefined && (!Number.isInteger(value.props.level) || (value.props.level as number) < 1 || (value.props.level as number) > 4)) throw new HttpError(400, 'A heading level is invalid.', 'invalid_input');
+  if (type === 'columns' && value.props.columns !== undefined && (!Number.isInteger(value.props.columns) || (value.props.columns as number) < 1 || (value.props.columns as number) > 3)) throw new HttpError(400, 'A column count is invalid.', 'invalid_input');
+  if (type === 'button' && value.props.variant !== undefined && !['primary', 'secondary'].includes(value.props.variant as string)) throw new HttpError(400, 'A button variant is invalid.', 'invalid_input');
+  if (type === 'spacer' && value.props.size !== undefined && !['compact', 'regular', 'spacious'].includes(value.props.size as string)) throw new HttpError(400, 'A spacer size is invalid.', 'invalid_input');
   if (!isRecord(value.styles) || !isRecord(value.responsive)) throw new HttpError(400, 'Builder styles are invalid.', 'invalid_input');
   if (!['default', 'muted', 'brand'].includes(value.styles.tone as string) || !['compact', 'regular', 'spacious'].includes(value.styles.padding as string) || !['left', 'center', 'right'].includes(value.styles.align as string) || !['content', 'wide'].includes(value.styles.width as string) || !['all', 'desktop', 'mobile'].includes(value.responsive.visibility as string)) throw new HttpError(400, 'A builder layout setting is not supported.', 'invalid_input');
   if (!Array.isArray(value.children) || value.children.length > 30) throw new HttpError(400, 'Builder block children are invalid.', 'invalid_input');
-  for (const child of value.children) validateBuilderNode(child, depth + 1);
+  if (!BUILDER_CONTAINER_TYPES.has(type) && value.children.length > 0) throw new HttpError(400, 'This builder block cannot contain child blocks.', 'invalid_input');
+  for (const child of value.children) validateBuilderNode(child, depth + 1, ids);
 }
 
 function validateBuilderPage(value: JsonRecord): void {
   if (value.version !== 1 || !isRecord(value.slots)) throw new HttpError(400, 'The builder page schema is invalid.', 'invalid_input');
+  const ids = new Set<string>();
   for (const [slot, nodes] of Object.entries(value.slots)) {
     if (!BUILDER_SLOTS.has(slot) || !Array.isArray(nodes) || nodes.length > 30) throw new HttpError(400, 'A builder page slot is invalid.', 'invalid_input');
-    for (const node of nodes) validateBuilderNode(node, 0);
+    for (const node of nodes) validateBuilderNode(node, 0, ids);
   }
 }
 
