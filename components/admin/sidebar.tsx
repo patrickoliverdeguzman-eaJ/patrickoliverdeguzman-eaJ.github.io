@@ -9,12 +9,14 @@ import {
   Users,
   MessageCircle,
   Settings,
+  PanelsTopLeft,
 } from 'lucide-react';
 import { adminPath } from '@/lib/site-paths';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/documents', label: 'Documents', icon: FileText },
+  { href: '/admin/visual-editor', label: 'Visual editor', icon: PanelsTopLeft },
   { href: '/admin/media', label: 'Media Library', icon: Image },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/chat', label: 'Chat', icon: MessageCircle },

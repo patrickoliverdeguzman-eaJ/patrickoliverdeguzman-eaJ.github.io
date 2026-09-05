@@ -1,0 +1,1783 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Archive,
+  ArrowLeft,
+  ChevronDown,
+  Copy,
+  GripVertical,
+  Image as ImageIcon,
+  Layers3,
+  Monitor,
+  MousePointer2,
+  Plus,
+  Redo2,
+  Save,
+  Send,
+  Smartphone,
+  Tablet,
+  Undo2,
+} from 'lucide-react';
+import { CMS_API } from '@/lib/cms-api';
+import { adminPath } from '@/lib/site-paths';
+import {
+  DEFAULT_HOME,
+  DEFAULT_PARTNERS,
+  type ClientContent,
+  type PartnerContent,
+  type SolutionContent,
+} from '@/lib/site-content';
+
+type CmsDocument = {
+  id: string;
+  type: string;
+  slug: string;
+  title: string;
+  status: 'draft' | 'published' | 'archived';
+  data: Record<string, unknown>;
+  publishedData: Record<string, unknown> | null;
+  updatedAt: string;
+};
+
+type MediaAsset = {
+  id: string;
+  filename: string;
+  url: string;
+  mimeType: string;
+};
+type PageKey = 'home' | 'partners';
+type Device = 'desktop' | 'tablet' | 'mobile';
+type FieldRef = { documentId: string; key: string };
+
+type Layer = {
+  id: string;
+  label: string;
+  type: string;
+  slug?: string;
+  repeating?: boolean;
+  locked?: boolean;
+};
+
+const PAGE_LAYERS: Record<PageKey, Layer[]> = {
+  home: [
+    {
+      id: 'global',
+      label: 'Global header & footer',
+      type: 'site_settings',
+      slug: 'global',
+      locked: true,
+    },
+    {
+      id: 'navigation',
+      label: 'Navigation',
+      type: 'navigation',
+      slug: 'main',
+      locked: true,
+    },
+    { id: 'hero', label: 'Hero', type: 'home_section', slug: 'hero' },
+    {
+      id: 'approach',
+      label: 'INFOStorage difference',
+      type: 'home_section',
+      slug: 'approach',
+    },
+    {
+      id: 'solutions-heading',
+      label: 'Solutions heading',
+      type: 'home_section',
+      slug: 'solutions-heading',
+    },
+    {
+      id: 'solutions',
+      label: 'Solution cards',
+      type: 'solution',
+      repeating: true,
+    },
+    {
+      id: 'continuity',
+      label: 'Data protection',
+      type: 'home_section',
+      slug: 'continuity',
+    },
+    {
+      id: 'services-heading',
+      label: 'Services heading',
+      type: 'home_section',
+      slug: 'services-heading',
+    },
+    { id: 'services', label: 'Service rows', type: 'service', repeating: true },
+    {
+      id: 'sectors',
+      label: 'Industries',
+      type: 'home_section',
+      slug: 'sectors',
+    },
+    {
+      id: 'contact',
+      label: 'Contact CTA',
+      type: 'home_section',
+      slug: 'contact',
+    },
+  ],
+  partners: [
+    {
+      id: 'global',
+      label: 'Global header & footer',
+      type: 'site_settings',
+      slug: 'global',
+      locked: true,
+    },
+    {
+      id: 'navigation',
+      label: 'Navigation',
+      type: 'navigation',
+      slug: 'main',
+      locked: true,
+    },
+    {
+      id: 'partners-hero',
+      label: 'Partners hero',
+      type: 'page_section',
+      slug: 'partners-hero',
+    },
+    {
+      id: 'partners-directory',
+      label: 'Technology partners heading',
+      type: 'page_section',
+      slug: 'partners-directory',
+    },
+    {
+      id: 'partners',
+      label: 'Technology partner cards',
+      type: 'partner',
+      repeating: true,
+    },
+    {
+      id: 'partners-clients',
+      label: 'Valued clients heading',
+      type: 'page_section',
+      slug: 'partners-clients',
+    },
+    {
+      id: 'clients',
+      label: 'Valued client logos',
+      type: 'client',
+      repeating: true,
+    },
+  ],
+};
+
+const DEFAULT_DATA: Record<string, Record<string, unknown>> = {
+  solution: { description: '', items: [] },
+  service: { description: '' },
+  partner: { focus: '', website: '' },
+  client: { logo: '', website: '' },
+};
+
+function text(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+function fieldName(key: string): string {
+  if (key === '__title') return 'Title';
+  return key
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[-_]/g, ' ')
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function isMediaKey(key: string): boolean {
+  return (
+    /(?:logo|image)$/i.test(key) ||
+    /(?:heroImage|backgroundImage|ogImage)$/i.test(key)
+  );
+}
+
+function nextSlug(value: string): string {
+  const root =
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'content';
+  return `${root}-${Date.now().toString(36)}`.slice(0, 120);
+}
+
+function findDocument(
+  documents: CmsDocument[],
+  type: string,
+  slug?: string,
+): CmsDocument | undefined {
+  return documents.find(
+    (document) => document.type === type && (!slug || document.slug === slug),
+  );
+}
+
+function EditorText({
+  field,
+  value,
+  selected,
+  onSelect,
+  onChange,
+  className,
+}: {
+  field?: FieldRef;
+  value: string;
+  selected: FieldRef | null;
+  onSelect: (field: FieldRef) => void;
+  onChange: (field: FieldRef, value: string) => void;
+  className?: string;
+}) {
+  const isSelected = Boolean(
+    field &&
+    selected?.documentId === field.documentId &&
+    selected.key === field.key,
+  );
+  return (
+    <span
+      className={`${className ?? ''} visual-editable ${isSelected ? 'visual-editable-selected' : ''}`}
+      contentEditable={Boolean(field)}
+      suppressContentEditableWarning
+      spellCheck={false}
+      onClick={(event) => {
+        if (!field) return;
+        event.stopPropagation();
+        onSelect(field);
+      }}
+      onInput={(event) => {
+        if (field) onChange(field, event.currentTarget.textContent ?? '');
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') event.preventDefault();
+      }}
+    >
+      {value}
+    </span>
+  );
+}
+
+export function VisualEditor() {
+  const [page, setPage] = useState<PageKey>('home');
+  const [documents, setDocuments] = useState<CmsDocument[]>([]);
+  const [media, setMedia] = useState<MediaAsset[]>([]);
+  const [selected, setSelected] = useState<FieldRef | null>(null);
+  const [history, setHistory] = useState<CmsDocument[][]>([]);
+  const [future, setFuture] = useState<CmsDocument[][]>([]);
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
+  const [device, setDevice] = useState<Device>('desktop');
+  const [status, setStatus] = useState<
+    'loading' | 'saved' | 'saving' | 'publishing' | 'error'
+  >('loading');
+  const [message, setMessage] = useState('Loading editor…');
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [layersOpen, setLayersOpen] = useState(true);
+
+  const load = useCallback(async () => {
+    setStatus('loading');
+    setMessage('Loading editor…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const headers = { authorization: `Bearer ${token}` };
+      const [documentsResponse, mediaResponse] = await Promise.all([
+        fetch(`${CMS_API}/v1/admin/documents?limit=100`, { headers }),
+        fetch(`${CMS_API}/v1/admin/media`, { headers }),
+      ]);
+      const documentsBody = (await documentsResponse.json()) as {
+        documents?: CmsDocument[];
+        error?: string;
+      };
+      const mediaBody = (await mediaResponse.json()) as {
+        media?: MediaAsset[];
+      };
+      if (!documentsResponse.ok)
+        throw new Error(
+          documentsBody.error ?? 'The CMS documents could not be loaded.',
+        );
+      setDocuments(documentsBody.documents ?? []);
+      setMedia(mediaBody.media ?? []);
+      setStatus('saved');
+      setMessage(
+        documentsBody.documents?.length
+          ? 'All changes saved'
+          : 'Import the existing site to begin editing',
+      );
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error ? error.message : 'The editor could not load.',
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pageLayers = PAGE_LAYERS[page];
+  const pageDocuments = useMemo(() => {
+    const types = new Set(pageLayers.map((layer) => layer.type));
+    return documents.filter((document) => types.has(document.type));
+  }, [documents, pageLayers]);
+
+  const markChanged = (nextDocuments: CmsDocument[], ids: string[]) => {
+    setHistory((items) => [...items, structuredClone(documents)].slice(-30));
+    setFuture([]);
+    setDocuments(nextDocuments);
+    setDirtyIds((current) => new Set([...current, ...ids]));
+    setStatus('saved');
+    setMessage('Unsaved draft changes');
+  };
+
+  const updateField = (field: FieldRef, value: string | boolean) => {
+    const next = documents.map((document) => {
+      if (document.id !== field.documentId) return document;
+      if (field.key === '__title') return { ...document, title: String(value) };
+      return { ...document, data: { ...document.data, [field.key]: value } };
+    });
+    markChanged(next, [field.documentId]);
+  };
+
+  const selectDocument = (document: CmsDocument, key = '__title') =>
+    setSelected({ documentId: document.id, key });
+
+  const saveDrafts = useCallback(
+    async (ids = Array.from(dirtyIds)) => {
+      if (!ids.length) return true;
+      setStatus('saving');
+      setMessage('Saving draft…');
+      try {
+        const token = localStorage.getItem('cms_token');
+        const headers = {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        };
+        for (const id of ids) {
+          const document = documents.find((item) => item.id === id);
+          if (!document) continue;
+          const response = await fetch(`${CMS_API}/v1/admin/documents/${id}`, {
+            method: 'PATCH',
+            headers,
+            body: JSON.stringify({
+              title: document.title,
+              slug: document.slug,
+              data: document.data,
+              note: 'Edited in visual editor',
+            }),
+          });
+          const result = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          if (!response.ok)
+            throw new Error(
+              result.error ?? `Could not save ${document.title}.`,
+            );
+        }
+        setDirtyIds(
+          (current) => new Set([...current].filter((id) => !ids.includes(id))),
+        );
+        setStatus('saved');
+        setMessage('All changes saved');
+        return true;
+      } catch (error) {
+        setStatus('error');
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : 'The draft could not be saved.',
+        );
+        return false;
+      }
+    },
+    [dirtyIds, documents],
+  );
+
+  useEffect(() => {
+    if (!dirtyIds.size) return;
+    const timer = window.setTimeout(() => {
+      void saveDrafts();
+    }, 1300);
+    return () => window.clearTimeout(timer);
+  }, [dirtyIds, documents, saveDrafts]);
+
+  const publishPage = async () => {
+    const saved = await saveDrafts();
+    if (!saved) return;
+    const ids = pageDocuments.map((document) => document.id);
+    if (!ids.length) {
+      setStatus('error');
+      setMessage('Import the existing site before publishing this page.');
+      return;
+    }
+    setStatus('publishing');
+    setMessage('Publishing…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      for (const id of ids) {
+        const response = await fetch(
+          `${CMS_API}/v1/admin/documents/${id}/publish`,
+          {
+            method: 'POST',
+            headers: { authorization: `Bearer ${token}` },
+          },
+        );
+        const result = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        if (!response.ok)
+          throw new Error(result.error ?? 'The page could not be published.');
+      }
+      setDocuments((current) =>
+        current.map((document) =>
+          ids.includes(document.id)
+            ? {
+                ...document,
+                status: 'published',
+                publishedData: structuredClone(document.data),
+              }
+            : document,
+        ),
+      );
+      setStatus('saved');
+      setMessage('Published to the live site');
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The page could not be published.',
+      );
+    }
+  };
+
+  const undo = () => {
+    const previous = history.at(-1);
+    if (!previous) return;
+    setFuture((items) => [structuredClone(documents), ...items].slice(0, 30));
+    setHistory((items) => items.slice(0, -1));
+    setDocuments(previous);
+    setDirtyIds(new Set(previous.map((document) => document.id)));
+    setMessage('Undid the last change');
+  };
+
+  const redo = () => {
+    const next = future[0];
+    if (!next) return;
+    setHistory((items) => [...items, structuredClone(documents)].slice(-30));
+    setFuture((items) => items.slice(1));
+    setDocuments(next);
+    setDirtyIds(new Set(next.map((document) => document.id)));
+    setMessage('Restored the change');
+  };
+
+  const addRepeater = async (
+    type: 'solution' | 'service' | 'partner' | 'client',
+  ) => {
+    const baseTitle =
+      type === 'solution'
+        ? 'New solution'
+        : type === 'service'
+          ? 'New service'
+          : type === 'partner'
+            ? 'New partner'
+            : 'New client';
+    setStatus('saving');
+    setMessage(`Adding ${baseTitle.toLowerCase()}…`);
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          type,
+          title: baseTitle,
+          slug: nextSlug(baseTitle),
+          data: DEFAULT_DATA[type],
+          note: 'Added in visual editor',
+        }),
+      });
+      const result = (await response.json()) as {
+        document?: CmsDocument;
+        error?: string;
+      };
+      if (!response.ok || !result.document)
+        throw new Error(result.error ?? 'The block could not be added.');
+      setDocuments((current) => [...current, result.document!]);
+      setSelected({ documentId: result.document.id, key: '__title' });
+      setDirtyIds((current) => new Set([...current, result.document!.id]));
+      setStatus('saved');
+      setMessage(`${baseTitle} added as a draft`);
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The block could not be added.',
+      );
+    }
+  };
+
+  const duplicateSelected = async () => {
+    const document = selected
+      ? documents.find((item) => item.id === selected.documentId)
+      : undefined;
+    if (
+      !document ||
+      !['solution', 'service', 'partner', 'client'].includes(document.type)
+    )
+      return;
+    setStatus('saving');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const title = `${document.title} copy`;
+      const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          type: document.type,
+          title,
+          slug: nextSlug(title),
+          data: document.data,
+          note: 'Duplicated in visual editor',
+        }),
+      });
+      const result = (await response.json()) as {
+        document?: CmsDocument;
+        error?: string;
+      };
+      if (!response.ok || !result.document)
+        throw new Error(result.error ?? 'The block could not be duplicated.');
+      setDocuments((current) => [...current, result.document!]);
+      setSelected({ documentId: result.document.id, key: '__title' });
+      setDirtyIds((current) => new Set([...current, result.document!.id]));
+      setStatus('saved');
+      setMessage('Block duplicated as a draft');
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The block could not be duplicated.',
+      );
+    }
+  };
+
+  const archiveSelected = async () => {
+    const document = selected
+      ? documents.find((item) => item.id === selected.documentId)
+      : undefined;
+    if (
+      !document ||
+      !['solution', 'service', 'partner', 'client'].includes(document.type)
+    )
+      return;
+    if (
+      !window.confirm(
+        `Archive “${document.title}”? It will be removed from the live page after publishing.`,
+      )
+    )
+      return;
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(
+        `${CMS_API}/v1/admin/documents/${document.id}`,
+        { method: 'DELETE', headers: { authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) throw new Error('The block could not be archived.');
+      setDocuments((current) =>
+        current.filter((item) => item.id !== document.id),
+      );
+      setSelected(null);
+      setMessage('Block archived');
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The block could not be archived.',
+      );
+    }
+  };
+
+  const reorderRepeater = async (type: string, targetId: string) => {
+    if (!draggedId || draggedId === targetId) return;
+    const items = documents.filter((document) => document.type === type);
+    const fromIndex = items.findIndex((document) => document.id === draggedId);
+    const targetIndex = items.findIndex((document) => document.id === targetId);
+    if (fromIndex < 0 || targetIndex < 0) return;
+    const reordered = [...items];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    const ids = reordered.map((document) => document.id);
+    const currentPositions = documents.map((document) =>
+      document.type === type ? reordered.shift()! : document,
+    );
+    setDocuments(currentPositions);
+    setMessage('Reordering blocks…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents/reorder`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ids }),
+      });
+      if (!response.ok) throw new Error('The new order could not be saved.');
+      setMessage('Block order saved');
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The new order could not be saved.',
+      );
+      void load();
+    } finally {
+      setDraggedId(null);
+    }
+  };
+
+  const selectedDocument = selected
+    ? documents.find((document) => document.id === selected.documentId)
+    : undefined;
+  const selectedFields = selectedDocument
+    ? [
+        { key: '__title', value: selectedDocument.title },
+        ...Object.entries(selectedDocument.data)
+          .filter(
+            ([, value]) =>
+              typeof value === 'string' || typeof value === 'boolean',
+          )
+          .map(([key, value]) => ({ key, value: value as string | boolean })),
+      ]
+    : [];
+
+  const selectLayer = (layer: Layer) => {
+    const document = layer.repeating
+      ? documents.find((item) => item.type === layer.type)
+      : findDocument(documents, layer.type, layer.slug);
+    if (document) selectDocument(document);
+  };
+
+  const previewProps = {
+    documents,
+    selected,
+    onSelect: (field: FieldRef) => setSelected(field),
+    onChange: updateField,
+    onSelectDocument: selectDocument,
+    draggedId,
+    setDraggedId,
+    onDropRepeater: reorderRepeater,
+  };
+
+  return (
+    <div className="visual-editor">
+      <header className="visual-toolbar">
+        <a className="admin-btn admin-btn-ghost" href={adminPath('/admin')}>
+          <ArrowLeft size={16} /> Back to CMS
+        </a>
+        <div className="visual-page-switcher">
+          {(['home', 'partners'] as PageKey[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={page === key ? 'active' : ''}
+              onClick={() => {
+                setPage(key);
+                setSelected(null);
+              }}
+            >
+              {key === 'home' ? 'Home' : 'Partners'}
+            </button>
+          ))}
+        </div>
+        <div
+          className={`visual-save-status status-${status}`}
+          aria-live="polite"
+        >
+          {status === 'saving' || status === 'publishing' ? '● ' : ''}
+          {message}
+        </div>
+        <div className="visual-toolbar-actions">
+          <button
+            className="admin-btn admin-btn-ghost"
+            type="button"
+            disabled={!history.length}
+            onClick={undo}
+            title="Undo"
+          >
+            <Undo2 size={16} /> Undo
+          </button>
+          <button
+            className="admin-btn admin-btn-ghost"
+            type="button"
+            disabled={!future.length}
+            onClick={redo}
+            title="Redo"
+          >
+            <Redo2 size={16} /> Redo
+          </button>
+          <div className="visual-devices" aria-label="Preview device">
+            <button
+              type="button"
+              className={device === 'desktop' ? 'active' : ''}
+              onClick={() => setDevice('desktop')}
+              title="Desktop preview"
+            >
+              <Monitor size={16} />
+            </button>
+            <button
+              type="button"
+              className={device === 'tablet' ? 'active' : ''}
+              onClick={() => setDevice('tablet')}
+              title="Tablet preview"
+            >
+              <Tablet size={16} />
+            </button>
+            <button
+              type="button"
+              className={device === 'mobile' ? 'active' : ''}
+              onClick={() => setDevice('mobile')}
+              title="Mobile preview"
+            >
+              <Smartphone size={16} />
+            </button>
+          </div>
+          <button
+            className="admin-btn admin-btn-secondary"
+            type="button"
+            onClick={() => void saveDrafts()}
+            disabled={!dirtyIds.size || status === 'saving'}
+          >
+            <Save size={16} /> Save draft
+          </button>
+          <button
+            className="admin-btn admin-btn-primary"
+            type="button"
+            onClick={() => void publishPage()}
+            disabled={status === 'publishing'}
+          >
+            <Send size={16} /> Publish
+          </button>
+        </div>
+      </header>
+
+      <div className="visual-editor-body">
+        <aside className="visual-left-panel">
+          <div className="visual-panel-heading">
+            <Layers3 size={16} />
+            <span>Pages & layers</span>
+          </div>
+          <div className="visual-page-tree">
+            <button
+              type="button"
+              className="visual-tree-page"
+              onClick={() => setLayersOpen((value) => !value)}
+            >
+              <ChevronDown
+                size={15}
+                className={layersOpen ? '' : 'collapsed'}
+              />{' '}
+              {page === 'home' ? 'Home' : 'Partners'}
+            </button>
+            {layersOpen &&
+              pageLayers.map((layer) => {
+                const entries = layer.repeating
+                  ? documents.filter((document) => document.type === layer.type)
+                  : [];
+                const direct = layer.repeating
+                  ? undefined
+                  : findDocument(documents, layer.type, layer.slug);
+                const active = Boolean(
+                  selected &&
+                  (direct?.id === selected.documentId ||
+                    entries.some((entry) => entry.id === selected.documentId)),
+                );
+                return (
+                  <div key={layer.id} className="visual-layer-group">
+                    <button
+                      type="button"
+                      className={`visual-layer ${active ? 'active' : ''}`}
+                      onClick={() => selectLayer(layer)}
+                    >
+                      <MousePointer2 size={13} /> {layer.label}{' '}
+                      {layer.locked && <small>GLOBAL</small>}
+                    </button>
+                    {layer.repeating &&
+                      entries.map((entry) => (
+                        <button
+                          key={entry.id}
+                          type="button"
+                          className={`visual-layer visual-layer-child ${selected?.documentId === entry.id ? 'active' : ''}`}
+                          onClick={() => selectDocument(entry)}
+                        >
+                          <GripVertical size={13} /> {entry.title}
+                        </button>
+                      ))}
+                  </div>
+                );
+              })}
+          </div>
+          <div className="visual-add-block">
+            <span>ADD BLOCK</span>
+            {page === 'home' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void addRepeater('solution')}
+                >
+                  <Plus size={15} /> Solution card
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void addRepeater('service')}
+                >
+                  <Plus size={15} /> Service row
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void addRepeater('partner')}
+                >
+                  <Plus size={15} /> Partner card
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void addRepeater('client')}
+                >
+                  <Plus size={15} /> Client logo
+                </button>
+              </>
+            )}
+          </div>
+        </aside>
+
+        <main className="visual-canvas-area">
+          <div className={`visual-canvas visual-canvas-${device}`}>
+            {page === 'home' ? (
+              <HomePreview {...previewProps} />
+            ) : (
+              <PartnersPreview {...previewProps} />
+            )}
+          </div>
+        </main>
+
+        <aside className="visual-right-panel">
+          <div className="visual-panel-heading">
+            <MousePointer2 size={16} />
+            <span>Content settings</span>
+          </div>
+          {!selectedDocument ? (
+            <div className="visual-empty-settings">
+              <MousePointer2 size={24} />
+              <p>
+                Click a highlighted item in the preview, or choose a layer to
+                edit it.
+              </p>
+            </div>
+          ) : (
+            <div className="visual-settings-content">
+              <div className="visual-selection-label">
+                <span>{selectedDocument.type.replace('_', ' ')}</span>
+                <strong>{selectedDocument.title}</strong>
+                <small>
+                  {selectedDocument.status === 'published'
+                    ? 'Published — edits stay draft until you publish'
+                    : 'Draft'}
+                </small>
+              </div>
+              {selectedFields.map((field) => (
+                <label key={field.key} className="visual-field">
+                  <span>{fieldName(field.key)}</span>
+                  {typeof field.value === 'boolean' ? (
+                    <input
+                      type="checkbox"
+                      checked={field.value}
+                      onChange={(event) =>
+                        updateField(
+                          { documentId: selectedDocument.id, key: field.key },
+                          event.target.checked,
+                        )
+                      }
+                    />
+                  ) : (
+                    <>
+                      {field.key === selected?.key &&
+                      field.value.length > 90 ? (
+                        <textarea
+                          value={field.value}
+                          onChange={(event) =>
+                            updateField(
+                              {
+                                documentId: selectedDocument.id,
+                                key: field.key,
+                              },
+                              event.target.value,
+                            )
+                          }
+                        />
+                      ) : (
+                        <input
+                          value={field.value}
+                          onFocus={() =>
+                            setSelected({
+                              documentId: selectedDocument.id,
+                              key: field.key,
+                            })
+                          }
+                          onChange={(event) =>
+                            updateField(
+                              {
+                                documentId: selectedDocument.id,
+                                key: field.key,
+                              },
+                              event.target.value,
+                            )
+                          }
+                        />
+                      )}
+                      {isMediaKey(field.key) && media.length > 0 && (
+                        <select
+                          value=""
+                          onChange={(event) => {
+                            if (event.target.value)
+                              updateField(
+                                {
+                                  documentId: selectedDocument.id,
+                                  key: field.key,
+                                },
+                                event.target.value,
+                              );
+                          }}
+                        >
+                          <option value="">Replace from media library…</option>
+                          {media
+                            .filter((asset) =>
+                              asset.mimeType.startsWith('image/'),
+                            )
+                            .map((asset) => (
+                              <option key={asset.id} value={asset.url}>
+                                {asset.filename}
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </>
+                  )}
+                </label>
+              ))}
+              <section className="visual-section-actions">
+                <h3>Block actions</h3>
+                {['solution', 'service', 'partner', 'client'].includes(
+                  selectedDocument.type,
+                ) ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void duplicateSelected()}
+                    >
+                      <Copy size={15} /> Duplicate
+                    </button>
+                    <button
+                      type="button"
+                      className="danger"
+                      onClick={() => void archiveSelected()}
+                    >
+                      <Archive size={15} /> Archive
+                    </button>
+                  </>
+                ) : (
+                  <p>
+                    This is a protected layout or shared component. Its content
+                    can change, but its placement stays safe.
+                  </p>
+                )}
+              </section>
+              <section className="visual-section-actions">
+                <h3>Revision safety</h3>
+                <p>
+                  Every autosave creates a draft revision. Publishing never
+                  exposes unsaved edits.
+                </p>
+              </section>
+            </div>
+          )}
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+type PreviewProps = {
+  documents: CmsDocument[];
+  selected: FieldRef | null;
+  onSelect: (field: FieldRef) => void;
+  onChange: (field: FieldRef, value: string) => void;
+  onSelectDocument: (document: CmsDocument, key?: string) => void;
+  draggedId: string | null;
+  setDraggedId: (id: string | null) => void;
+  onDropRepeater: (type: string, targetId: string) => void;
+};
+
+function HomePreview(props: PreviewProps) {
+  const {
+    documents,
+    selected,
+    onSelect,
+    onChange,
+    onSelectDocument,
+    draggedId,
+    setDraggedId,
+    onDropRepeater,
+  } = props;
+  const get = (type: string, slug: string) =>
+    findDocument(documents, type, slug);
+  const ref = (
+    document: CmsDocument | undefined,
+    key: string,
+  ): FieldRef | undefined =>
+    document ? { documentId: document.id, key } : undefined;
+  const value = (
+    document: CmsDocument | undefined,
+    key: string,
+    fallback: string,
+  ) =>
+    document
+      ? key === '__title'
+        ? document.title
+        : text(document.data[key], fallback)
+      : fallback;
+  const site = get('site_settings', 'global');
+  const hero = get('home_section', 'hero');
+  const approach = get('home_section', 'approach');
+  const solutionsHeading = get('home_section', 'solutions-heading');
+  const continuity = get('home_section', 'continuity');
+  const servicesHeading = get('home_section', 'services-heading');
+  const sectors = get('home_section', 'sectors');
+  const contact = get('home_section', 'contact');
+  const solutions = documents.filter(
+    (document) => document.type === 'solution',
+  );
+  const services = documents.filter((document) => document.type === 'service');
+  const logo = value(site, 'logo', DEFAULT_HOME.site.logo);
+  const solutionFallbacks = DEFAULT_HOME.solutions;
+  const serviceFallbacks = DEFAULT_HOME.services;
+
+  return (
+    <div className="site-shell visual-public-preview">
+      <section
+        className="hero visual-section"
+        onClick={() => hero && onSelectDocument(hero)}
+      >
+        <nav className="nav-wrap">
+          <span className="brand brand-image">
+            <span className="brand-logo-frame">
+              <img className="brand-logo" src={logo} alt="INFOStorage" />
+            </span>
+          </span>
+          <div className="desktop-links">
+            <span>Solutions</span>
+            <span>Services</span>
+            <span>Why INFOStorage</span>
+            <span>Partners</span>
+          </div>
+          <span className="nav-cta">Start a conversation</span>
+        </nav>
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <p className="eyebrow">
+              <EditorText
+                field={ref(hero, 'eyebrow')}
+                value={value(hero, 'eyebrow', DEFAULT_HOME.hero.eyebrow)}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+            <h1 className="hero-title">
+              <EditorText
+                field={ref(hero, 'titleA')}
+                value={value(hero, 'titleA', DEFAULT_HOME.hero.titleA)}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />{' '}
+              <span>
+                <EditorText
+                  field={ref(hero, 'titleAccent')}
+                  value={value(
+                    hero,
+                    'titleAccent',
+                    DEFAULT_HOME.hero.titleAccent,
+                  )}
+                  selected={selected}
+                  onSelect={onSelect}
+                  onChange={onChange}
+                />
+              </span>
+            </h1>
+            <p className="hero-description">
+              <EditorText
+                field={ref(hero, 'description')}
+                value={value(
+                  hero,
+                  'description',
+                  DEFAULT_HOME.hero.description,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+            <div className="hero-actions">
+              <span className="button button-primary">
+                <EditorText
+                  field={ref(hero, 'primaryLabel')}
+                  value={value(
+                    hero,
+                    'primaryLabel',
+                    DEFAULT_HOME.hero.primaryLabel,
+                  )}
+                  selected={selected}
+                  onSelect={onSelect}
+                  onChange={onChange}
+                />
+              </span>
+              <span className="button button-quiet">
+                <EditorText
+                  field={ref(hero, 'secondaryLabel')}
+                  value={value(
+                    hero,
+                    'secondaryLabel',
+                    DEFAULT_HOME.hero.secondaryLabel,
+                  )}
+                  selected={selected}
+                  onSelect={onSelect}
+                  onChange={onChange}
+                />
+              </span>
+            </div>
+          </div>
+          <div className="hero-brand-stage">
+            <div className="hero-logo-plaque">
+              <img src={logo} alt="INFOStorage" />
+            </div>
+          </div>
+        </div>
+      </section>
+      <section
+        className="intro section-pad visual-section"
+        onClick={() => approach && onSelectDocument(approach)}
+      >
+        <div className="section-kicker">
+          <EditorText
+            field={ref(approach, 'kicker')}
+            value={value(approach, 'kicker', DEFAULT_HOME.approach.kicker)}
+            selected={selected}
+            onSelect={onSelect}
+            onChange={onChange}
+          />
+        </div>
+        <div className="intro-grid">
+          <h2 className="display-heading">
+            <EditorText
+              field={ref(approach, 'headingA')}
+              value={value(
+                approach,
+                'headingA',
+                DEFAULT_HOME.approach.headingA,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+            <br />
+            <em>
+              <EditorText
+                field={ref(approach, 'headingAccent')}
+                value={value(
+                  approach,
+                  'headingAccent',
+                  DEFAULT_HOME.approach.headingAccent,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </em>
+          </h2>
+          <div className="intro-copy">
+            <p>
+              <EditorText
+                field={ref(approach, 'body')}
+                value={value(approach, 'body', DEFAULT_HOME.approach.body)}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+          </div>
+        </div>
+      </section>
+      <section
+        className="solutions-section section-pad visual-section"
+        onClick={() => solutionsHeading && onSelectDocument(solutionsHeading)}
+      >
+        <div className="solutions-heading">
+          <div>
+            <p className="section-kicker">
+              <EditorText
+                field={ref(solutionsHeading, 'kicker')}
+                value={value(
+                  solutionsHeading,
+                  'kicker',
+                  DEFAULT_HOME.solutionsHeading.kicker,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+            <h2 className="display-heading">
+              <EditorText
+                field={ref(solutionsHeading, 'heading')}
+                value={value(
+                  solutionsHeading,
+                  'heading',
+                  DEFAULT_HOME.solutionsHeading.heading,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </h2>
+          </div>
+          <p>
+            <EditorText
+              field={ref(solutionsHeading, 'body')}
+              value={value(
+                solutionsHeading,
+                'body',
+                DEFAULT_HOME.solutionsHeading.body,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+        </div>
+        <div className="solutions-grid">
+          {(solutions.length ? solutions : solutionFallbacks).map(
+            (item, index) => {
+              const document = 'id' in item ? (item as CmsDocument) : undefined;
+              const fallback = document ? undefined : (item as SolutionContent);
+              return (
+                <article
+                  key={document?.id ?? fallback?.title}
+                  className={`solution-card visual-repeater ${draggedId === document?.id ? 'dragging' : ''}`}
+                  draggable={Boolean(document)}
+                  onDragStart={() => document && setDraggedId(document.id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() =>
+                    document && onDropRepeater('solution', document.id)
+                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (document) onSelectDocument(document);
+                  }}
+                >
+                  <div className="solution-topline">
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <GripVertical size={18} />
+                  </div>
+                  <h3>
+                    <EditorText
+                      field={ref(document, '__title')}
+                      value={value(document, '__title', fallback?.title ?? '')}
+                      selected={selected}
+                      onSelect={onSelect}
+                      onChange={onChange}
+                    />
+                  </h3>
+                  <p>
+                    <EditorText
+                      field={ref(document, 'description')}
+                      value={value(
+                        document,
+                        'description',
+                        fallback?.description ?? '',
+                      )}
+                      selected={selected}
+                      onSelect={onSelect}
+                      onChange={onChange}
+                    />
+                  </p>
+                </article>
+              );
+            },
+          )}
+        </div>
+      </section>
+      <section
+        className="continuity-panel section-pad visual-section"
+        onClick={() => continuity && onSelectDocument(continuity)}
+      >
+        <div className="continuity-art" />
+        <div className="continuity-copy">
+          <p className="eyebrow">
+            <EditorText
+              field={ref(continuity, 'eyebrow')}
+              value={value(
+                continuity,
+                'eyebrow',
+                DEFAULT_HOME.continuity.eyebrow,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+          <h2>
+            <EditorText
+              field={ref(continuity, 'heading')}
+              value={value(
+                continuity,
+                'heading',
+                DEFAULT_HOME.continuity.heading,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </h2>
+          <p>
+            <EditorText
+              field={ref(continuity, 'body')}
+              value={value(continuity, 'body', DEFAULT_HOME.continuity.body)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+        </div>
+      </section>
+      <section
+        className="services-section section-pad visual-section"
+        onClick={() => servicesHeading && onSelectDocument(servicesHeading)}
+      >
+        <div className="services-head">
+          <p className="section-kicker">
+            <EditorText
+              field={ref(servicesHeading, 'kicker')}
+              value={value(
+                servicesHeading,
+                'kicker',
+                DEFAULT_HOME.servicesHead.kicker,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+          <h2 className="display-heading">
+            <EditorText
+              field={ref(servicesHeading, 'heading')}
+              value={value(
+                servicesHeading,
+                'heading',
+                DEFAULT_HOME.servicesHead.heading,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </h2>
+        </div>
+        <div className="service-list">
+          {(services.length ? services : serviceFallbacks).map(
+            (item, index) => {
+              const document =
+                typeof item === 'object' ? (item as CmsDocument) : undefined;
+              const fallback = typeof item === 'string' ? item : '';
+              return (
+                <div
+                  key={document?.id ?? fallback}
+                  className="service-row visual-repeater"
+                  draggable={Boolean(document)}
+                  onDragStart={() => document && setDraggedId(document.id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() =>
+                    document && onDropRepeater('service', document.id)
+                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (document) onSelectDocument(document);
+                  }}
+                >
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <strong>
+                    <EditorText
+                      field={ref(document, '__title')}
+                      value={value(document, '__title', fallback)}
+                      selected={selected}
+                      onSelect={onSelect}
+                      onChange={onChange}
+                    />
+                  </strong>
+                  <GripVertical size={18} />
+                </div>
+              );
+            },
+          )}
+        </div>
+      </section>
+      <section
+        className="sectors section-pad visual-section"
+        onClick={() => sectors && onSelectDocument(sectors)}
+      >
+        <div className="sectors-copy">
+          <p className="section-kicker">
+            <EditorText
+              field={ref(sectors, 'kicker')}
+              value={value(sectors, 'kicker', DEFAULT_HOME.sectors.kicker)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+          <h2 className="display-heading">
+            <EditorText
+              field={ref(sectors, 'heading')}
+              value={value(sectors, 'heading', DEFAULT_HOME.sectors.heading)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </h2>
+        </div>
+      </section>
+      <section
+        className="contact-panel visual-section"
+        onClick={() => contact && onSelectDocument(contact)}
+      >
+        <div className="contact-content">
+          <p className="eyebrow">
+            <EditorText
+              field={ref(contact, 'eyebrow')}
+              value={value(contact, 'eyebrow', DEFAULT_HOME.contact.eyebrow)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+          <h2>
+            <EditorText
+              field={ref(contact, 'heading')}
+              value={value(contact, 'heading', DEFAULT_HOME.contact.heading)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </h2>
+          <p>
+            <EditorText
+              field={ref(contact, 'body')}
+              value={value(contact, 'body', DEFAULT_HOME.contact.body)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PartnersPreview(props: PreviewProps) {
+  const {
+    documents,
+    selected,
+    onSelect,
+    onChange,
+    onSelectDocument,
+    draggedId,
+    setDraggedId,
+    onDropRepeater,
+  } = props;
+  const get = (type: string, slug: string) =>
+    findDocument(documents, type, slug);
+  const ref = (
+    document: CmsDocument | undefined,
+    key: string,
+  ): FieldRef | undefined =>
+    document ? { documentId: document.id, key } : undefined;
+  const value = (
+    document: CmsDocument | undefined,
+    key: string,
+    fallback: string,
+  ) =>
+    document
+      ? key === '__title'
+        ? document.title
+        : text(document.data[key], fallback)
+      : fallback;
+  const hero = get('page_section', 'partners-hero');
+  const directory = get('page_section', 'partners-directory');
+  const clientsHead = get('page_section', 'partners-clients');
+  const partners = documents.filter((document) => document.type === 'partner');
+  const clients = documents.filter((document) => document.type === 'client');
+  const partnerFallbacks = DEFAULT_PARTNERS.partners;
+  const clientFallbacks = DEFAULT_PARTNERS.clients;
+  return (
+    <div className="partner-page visual-public-preview">
+      <section
+        className="partner-hero visual-section"
+        onClick={() => hero && onSelectDocument(hero)}
+      >
+        <nav className="nav-wrap">
+          <span className="brand">INFOStorage</span>
+          <div className="desktop-links">
+            <span>Solutions</span>
+            <span>Services</span>
+            <span>Partners</span>
+          </div>
+        </nav>
+        <div className="partner-hero-inner section-pad">
+          <div className="partner-hero-copy">
+            <p className="eyebrow">
+              <EditorText
+                field={ref(hero, 'eyebrow')}
+                value={value(hero, 'eyebrow', DEFAULT_PARTNERS.hero.eyebrow)}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+            <h1 className="partner-title">
+              <EditorText
+                field={ref(hero, 'titleA')}
+                value={value(hero, 'titleA', DEFAULT_PARTNERS.hero.titleA)}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />{' '}
+              <span>
+                <EditorText
+                  field={ref(hero, 'titleAccent')}
+                  value={value(
+                    hero,
+                    'titleAccent',
+                    DEFAULT_PARTNERS.hero.titleAccent,
+                  )}
+                  selected={selected}
+                  onSelect={onSelect}
+                  onChange={onChange}
+                />
+              </span>
+            </h1>
+            <p className="partner-description">
+              <EditorText
+                field={ref(hero, 'description')}
+                value={value(
+                  hero,
+                  'description',
+                  DEFAULT_PARTNERS.hero.description,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+          </div>
+        </div>
+      </section>
+      <section
+        className="partner-directory section-pad visual-section"
+        onClick={() => directory && onSelectDocument(directory)}
+      >
+        <div className="partner-directory-heading">
+          <div>
+            <p className="section-kicker">
+              <EditorText
+                field={ref(directory, 'kicker')}
+                value={value(
+                  directory,
+                  'kicker',
+                  DEFAULT_PARTNERS.directory.kicker,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+            <h2 className="display-heading">
+              <EditorText
+                field={ref(directory, 'heading')}
+                value={value(
+                  directory,
+                  'heading',
+                  DEFAULT_PARTNERS.directory.heading,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </h2>
+          </div>
+          <p>
+            <EditorText
+              field={ref(directory, 'body')}
+              value={value(directory, 'body', DEFAULT_PARTNERS.directory.body)}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+        </div>
+        <div className="partner-grid">
+          {(partners.length ? partners : partnerFallbacks).map(
+            (item, index) => {
+              const document = 'id' in item ? (item as CmsDocument) : undefined;
+              const fallback = document ? undefined : (item as PartnerContent);
+              return (
+                <article
+                  key={document?.id ?? fallback?.name}
+                  className="partner-card visual-repeater"
+                  draggable={Boolean(document)}
+                  onDragStart={() => document && setDraggedId(document.id)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={() =>
+                    document && onDropRepeater('partner', document.id)
+                  }
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (document) onSelectDocument(document);
+                  }}
+                >
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <h3>
+                    <EditorText
+                      field={ref(document, '__title')}
+                      value={value(document, '__title', fallback?.name ?? '')}
+                      selected={selected}
+                      onSelect={onSelect}
+                      onChange={onChange}
+                    />
+                  </h3>
+                  <p>
+                    <EditorText
+                      field={ref(document, 'focus')}
+                      value={value(document, 'focus', fallback?.focus ?? '')}
+                      selected={selected}
+                      onSelect={onSelect}
+                      onChange={onChange}
+                    />
+                  </p>
+                  <GripVertical size={16} />
+                </article>
+              );
+            },
+          )}
+        </div>
+      </section>
+      <section
+        className="partner-clients section-pad visual-section"
+        onClick={() => clientsHead && onSelectDocument(clientsHead)}
+      >
+        <div className="partner-clients-heading">
+          <div>
+            <p className="section-kicker">
+              <EditorText
+                field={ref(clientsHead, 'kicker')}
+                value={value(
+                  clientsHead,
+                  'kicker',
+                  DEFAULT_PARTNERS.clientsHead.kicker,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </p>
+            <h2>
+              <EditorText
+                field={ref(clientsHead, 'heading')}
+                value={value(
+                  clientsHead,
+                  'heading',
+                  DEFAULT_PARTNERS.clientsHead.heading,
+                )}
+                selected={selected}
+                onSelect={onSelect}
+                onChange={onChange}
+              />
+            </h2>
+          </div>
+          <p>
+            <EditorText
+              field={ref(clientsHead, 'body')}
+              value={value(
+                clientsHead,
+                'body',
+                DEFAULT_PARTNERS.clientsHead.body,
+              )}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </p>
+        </div>
+        <div className="partner-clients-grid">
+          {(clients.length ? clients : clientFallbacks).map((item, index) => {
+            const document = 'id' in item ? (item as CmsDocument) : undefined;
+            const fallback = document ? undefined : (item as ClientContent);
+            return (
+              <article
+                key={document?.id ?? fallback?.name}
+                className={`partner-client-card visual-repeater ${draggedId === document?.id ? 'dragging' : ''}`}
+                draggable={Boolean(document)}
+                onDragStart={() => document && setDraggedId(document.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={() => document && onDropRepeater('client', document.id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (document) onSelectDocument(document);
+                }}
+              >
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                {text(document?.data.logo, fallback?.logo ?? '') ? (
+                  <img
+                    src={text(document?.data.logo, fallback?.logo ?? '')}
+                    alt="Client logo"
+                  />
+                ) : (
+                  <ImageIcon size={30} />
+                )}
+                <small>
+                  <EditorText
+                    field={ref(document, '__title')}
+                    value={value(document, '__title', fallback?.name ?? '')}
+                    selected={selected}
+                    onSelect={onSelect}
+                    onChange={onChange}
+                  />
+                </small>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
