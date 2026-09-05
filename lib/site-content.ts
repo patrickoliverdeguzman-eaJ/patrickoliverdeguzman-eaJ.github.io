@@ -1,4 +1,5 @@
 import { CMS_API } from './cms-api';
+import { normaliseBuilderPage, type BuilderPage } from './page-builder';
 
 // Content layer for the public site.
 //
@@ -210,6 +211,8 @@ export interface HomeContent {
   contact: { eyebrow: string; heading: string; body: string };
   site: { phone: string; phoneHref: string; address: string; addressUrl: string; logo: string };
   footer: { address: string; copyright: string };
+  /** Optional, schema-defined sections added through the visual builder. */
+  builder?: BuilderPage;
 }
 
 export const DEFAULT_HOME: HomeContent = {
@@ -289,6 +292,8 @@ export interface PartnersContent {
   hero: { eyebrow: string; titleA: string; titleAccent: string; description: string; ctaLabel: string; ctaHref: string };
   directory: { kicker: string; heading: string; body: string; note: string };
   clientsHead: { kicker: string; heading: string; body: string };
+  /** Optional, schema-defined sections added through the visual builder. */
+  builder?: BuilderPage;
 }
 
 export const DEFAULT_PARTNERS: PartnersContent = {
@@ -347,7 +352,7 @@ function siteFromDoc(data: Record<string, unknown> | null): Partial<HomeContent[
 export async function loadHomeContent(): Promise<HomeContent> {
   const content: HomeContent = structuredClone(DEFAULT_HOME);
   try {
-    const [settings, nav, hero, approach, solHead, continuity, svcHead, sectors, contact, solutions, services] =
+    const [settings, nav, hero, approach, solHead, continuity, svcHead, sectors, contact, solutions, services, builder] =
       await Promise.all([
         fetchPublishedDoc('site_settings', 'global'),
         fetchPublishedDoc('navigation', 'main'),
@@ -360,7 +365,10 @@ export async function loadHomeContent(): Promise<HomeContent> {
         fetchPublishedDoc('home_section', 'contact'),
         fetchPublishedList('solution'),
         fetchPublishedList('service'),
+        fetchPublishedDoc('builder_page', 'home'),
       ]);
+
+    if (builder) content.builder = normaliseBuilderPage(builder);
 
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
@@ -459,7 +467,7 @@ const CLIENT_LOGO_CLASS_FALLBACK: Record<string, string> = Object.fromEntries(
 export async function loadPartnersContent(): Promise<PartnersContent> {
   const content: PartnersContent = structuredClone(DEFAULT_PARTNERS);
   try {
-    const [settings, nav, partners, clients, hero, directory, clientsHead] = await Promise.all([
+    const [settings, nav, partners, clients, hero, directory, clientsHead, builder] = await Promise.all([
       fetchPublishedDoc('site_settings', 'global'),
       fetchPublishedDoc('navigation', 'main'),
       fetchPublishedList('partner'),
@@ -467,7 +475,9 @@ export async function loadPartnersContent(): Promise<PartnersContent> {
       fetchPublishedDoc('page_section', 'partners-hero'),
       fetchPublishedDoc('page_section', 'partners-directory'),
       fetchPublishedDoc('page_section', 'partners-clients'),
+      fetchPublishedDoc('builder_page', 'partners'),
     ]);
+    if (builder) content.builder = normaliseBuilderPage(builder);
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
     const { copyright, ...site } = siteFromDoc(settings);

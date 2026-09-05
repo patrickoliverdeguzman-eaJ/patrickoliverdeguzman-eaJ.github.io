@@ -89,6 +89,13 @@ const ALLOWED_MEDIA_EXTENSIONS: Record<string, readonly string[]> = {
   'image/gif': ['gif'],
   'application/pdf': ['pdf'],
 };
+const BUILDER_NODE_TYPES = new Set([
+  'section', 'container', 'columns', 'column', 'card', 'heading', 'text',
+  'image', 'button', 'divider', 'spacer',
+]);
+const BUILDER_SLOTS = new Set([
+  'afterHero', 'afterApproach', 'afterSolutions', 'afterServices', 'beforeContact', 'afterContent',
+]);
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const encoder = new TextEncoder();
 
@@ -192,10 +199,35 @@ function validateSlug(value: unknown): string {
   return slug;
 }
 
-function parseData(value: unknown): { value: JsonRecord; serialized: string } {
+function validateBuilderNode(value: unknown, depth: number): void {
+  if (!isRecord(value) || depth > 8) throw new HttpError(400, 'A builder block has an invalid structure.', 'invalid_input');
+  if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value.id)) throw new HttpError(400, 'A builder block id is invalid.', 'invalid_input');
+  if (typeof value.type !== 'string' || !BUILDER_NODE_TYPES.has(value.type)) throw new HttpError(400, 'A builder block type is not supported.', 'invalid_input');
+  if (!isRecord(value.props) || Object.keys(value.props).length > 20) throw new HttpError(400, 'Builder block properties are invalid.', 'invalid_input');
+  for (const [key, property] of Object.entries(value.props)) {
+    if (!/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(key)) throw new HttpError(400, 'A builder property name is invalid.', 'invalid_input');
+    if (!(typeof property === 'string' || typeof property === 'boolean' || (typeof property === 'number' && Number.isFinite(property))) || (typeof property === 'string' && property.length > 2_000)) throw new HttpError(400, 'A builder property value is invalid.', 'invalid_input');
+  }
+  if (!isRecord(value.styles) || !isRecord(value.responsive)) throw new HttpError(400, 'Builder styles are invalid.', 'invalid_input');
+  if (!['default', 'muted', 'brand'].includes(value.styles.tone as string) || !['compact', 'regular', 'spacious'].includes(value.styles.padding as string) || !['left', 'center', 'right'].includes(value.styles.align as string) || !['content', 'wide'].includes(value.styles.width as string) || !['all', 'desktop', 'mobile'].includes(value.responsive.visibility as string)) throw new HttpError(400, 'A builder layout setting is not supported.', 'invalid_input');
+  if (!Array.isArray(value.children) || value.children.length > 30) throw new HttpError(400, 'Builder block children are invalid.', 'invalid_input');
+  for (const child of value.children) validateBuilderNode(child, depth + 1);
+}
+
+function validateBuilderPage(value: JsonRecord): void {
+  if (value.version !== 1 || !isRecord(value.slots)) throw new HttpError(400, 'The builder page schema is invalid.', 'invalid_input');
+  for (const [slot, nodes] of Object.entries(value.slots)) {
+    if (!BUILDER_SLOTS.has(slot) || !Array.isArray(nodes) || nodes.length > 30) throw new HttpError(400, 'A builder page slot is invalid.', 'invalid_input');
+    for (const node of nodes) validateBuilderNode(node, 0);
+  }
+}
+
+function parseData(value: unknown, type?: string): { value: JsonRecord; serialized: string } {
   if (!isRecord(value)) {
     throw new HttpError(400, 'Content data must be a JSON object.', 'invalid_input');
   }
+
+  if (type === 'builder_page') validateBuilderPage(value as JsonRecord);
 
   let serialized: string;
   try {
@@ -686,7 +718,7 @@ async function createDocument(request: Request, user: CmsUser, env: CmsEnv): Pro
   const type = validateType(body.type);
   const title = asString(body.title, 'Title', 160);
   const slug = validateSlug(body.slug);
-  const data = parseData(body.data);
+  const data = parseData(body.data, type);
   const note = asOptionalString(body.note, 240);
   const id = crypto.randomUUID();
   const createdAt = now();
@@ -728,7 +760,7 @@ async function updateDocument(id: string, request: Request, user: CmsUser, env: 
 
   const title = body.title === undefined ? existing.title : asString(body.title, 'Title', 160);
   const slug = body.slug === undefined ? existing.slug : validateSlug(body.slug);
-  const data = body.data === undefined ? { serialized: existing.data_json } : parseData(body.data);
+  const data = body.data === undefined ? { serialized: existing.data_json } : parseData(body.data, existing.type);
   const note = asOptionalString(body.note, 240);
   const revision = existing.current_revision + 1;
   const updatedAt = now();

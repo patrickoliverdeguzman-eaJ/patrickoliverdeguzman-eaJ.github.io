@@ -3,6 +3,7 @@
 import { ArrowRight, ArrowUpRight, Menu } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import SiteChatbot from '@/app/site-chatbot';
+import { PageBuilderRenderer } from '@/components/page-builder-renderer';
 import { DEFAULT_PARTNERS, loadPartnersContent, type PartnersContent } from '@/lib/site-content';
 
 const partnersHref =
@@ -91,6 +92,8 @@ export function PartnersPage() {
         </div>
       </section>
 
+      <PageBuilderRenderer page={content.builder} slot="afterHero" />
+
       <section className="partner-directory section-pad" id="partner-directory">
         <div className="partner-directory-heading reveal">
           <div>
@@ -118,6 +121,8 @@ export function PartnersPage() {
           {directory.note}
         </p>
       </section>
+
+      <PageBuilderRenderer page={content.builder} slot="afterApproach" />
 
       <section className="partner-clients section-pad" id="valued-clients">
         <div className="partner-clients-heading reveal">
@@ -152,6 +157,8 @@ export function PartnersPage() {
         </div>
       </section>
 
+      <PageBuilderRenderer page={content.builder} slot="afterSolutions" />
+
       <section className="partner-method section-pad">
         <div className="partner-method-copy reveal">
           <p className="section-kicker">More than product selection</p>
@@ -176,6 +183,10 @@ export function PartnersPage() {
         </div>
       </section>
 
+      <PageBuilderRenderer page={content.builder} slot="afterServices" />
+
+      <PageBuilderRenderer page={content.builder} slot="beforeContact" />
+
       <section className="partner-contact">
         <div className="partner-contact-content reveal">
           <p className="eyebrow">Find the right fit</p>
@@ -189,6 +200,8 @@ export function PartnersPage() {
           </a>
         </div>
       </section>
+
+      <PageBuilderRenderer page={content.builder} slot="afterContent" />
 
       <footer className="site-footer">
         <a href="/" className="brand footer-brand partner-footer-brand" aria-label="INFOStorage home">

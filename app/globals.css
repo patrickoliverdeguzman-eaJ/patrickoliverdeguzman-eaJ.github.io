@@ -897,6 +897,58 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 }
 .partner-client-card.client-logo-amdocs img { object-position: center 58%; }
 
+/* Structured visual-builder output. The CMS stores only these known node
+   properties; no admin-authored HTML or free-form CSS is rendered here. */
+.page-builder-slot { width: 100%; }
+.page-builder-node { position: relative; min-width: 0; }
+.page-builder-section,
+.page-builder-container { padding-left: clamp(1.5rem, 5vw, 5.25rem); padding-right: clamp(1.5rem, 5vw, 5.25rem); }
+.page-builder-section { padding-top: clamp(3rem, 6vw, 6rem); padding-bottom: clamp(3rem, 6vw, 6rem); }
+.page-builder-container { width: min(100%, 1440px); margin-inline: auto; }
+.page-builder-card { display: grid; gap: 1rem; padding: clamp(1.25rem, 3vw, 2.25rem); border: 1px solid var(--line); border-radius: 1rem; }
+.page-builder-columns { display: grid; gap: clamp(1rem, 3vw, 2.5rem); }
+.page-builder-columns-1 { grid-template-columns: minmax(0, 1fr); }
+.page-builder-columns-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.page-builder-columns-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.page-builder-heading { margin: 0; color: var(--ink); font-size: clamp(2rem, 4vw, 4.4rem); font-weight: 570; letter-spacing: -0.055em; line-height: 0.98; }
+.page-builder-text { max-width: 65ch; margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.7; }
+.page-builder-image { margin: 0; overflow: hidden; border-radius: 0.85rem; background: var(--sand); }
+.page-builder-image img { display: block; width: 100%; min-height: 180px; max-height: 620px; object-fit: cover; }
+.page-builder-image-placeholder { display: grid; min-height: 180px; place-items: center; color: var(--muted); font-size: 0.82rem; }
+.page-builder-button { display: inline-flex; width: fit-content; align-items: center; justify-content: center; min-height: 44px; padding: 0.75rem 1rem; border: 1px solid transparent; border-radius: 0.45rem; font-size: 0.84rem; font-weight: 720; transition: transform 160ms ease, background 160ms ease; }
+.page-builder-button:hover { transform: translateY(-1px); }
+.page-builder-button-primary { background: var(--copper); color: white; }
+.page-builder-button-secondary { border-color: var(--copper); color: var(--copper); }
+.page-builder-divider { width: 100%; height: 1px; margin: 0; border: 0; background: var(--line); }
+.page-builder-spacer-compact { height: 1.5rem; }
+.page-builder-spacer-regular { height: 3rem; }
+.page-builder-spacer-spacious { height: 5rem; }
+.page-builder-tone-muted { background: var(--sand); }
+.page-builder-tone-brand { background: var(--navy-deep); color: white; }
+.page-builder-tone-brand .page-builder-heading { color: white; }
+.page-builder-tone-brand .page-builder-text { color: rgba(255, 255, 255, 0.75); }
+.page-builder-padding-compact { padding-top: 1.25rem; padding-bottom: 1.25rem; }
+.page-builder-padding-regular { padding-top: clamp(2rem, 4vw, 4rem); padding-bottom: clamp(2rem, 4vw, 4rem); }
+.page-builder-padding-spacious { padding-top: clamp(3.5rem, 7vw, 7rem); padding-bottom: clamp(3.5rem, 7vw, 7rem); }
+.page-builder-align-center { text-align: center; }
+.page-builder-align-center.page-builder-text { margin-inline: auto; }
+.page-builder-align-center.page-builder-button { margin-inline: auto; }
+.page-builder-align-right { text-align: right; }
+.page-builder-align-right.page-builder-text,
+.page-builder-align-right.page-builder-button { margin-left: auto; }
+.page-builder-width-content { max-width: 1120px; }
+.page-builder-width-wide { max-width: 1440px; }
+.page-builder-editor-label { position: absolute; top: 0.35rem; left: 0.35rem; z-index: 2; padding: 0.2rem 0.36rem; border-radius: 0.25rem; background: #820040; color: white; font-size: 0.61rem; font-weight: 750; letter-spacing: 0.06em; text-transform: uppercase; }
+
+@media (max-width: 700px) {
+  .page-builder-columns-2,
+  .page-builder-columns-3 { grid-template-columns: minmax(0, 1fr); }
+  .page-builder-visible-desktop { display: none; }
+}
+@media (min-width: 701px) {
+  .page-builder-visible-mobile { display: none; }
+}
+
 .partner-method {
   display: grid;
   grid-template-columns: minmax(0, 0.8fr) minmax(440px, 1.2fr);

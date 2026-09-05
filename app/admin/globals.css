@@ -748,6 +748,62 @@
   border-color: #820040;
   color: #820040;
 }
+.visual-builder-library {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(130, 0, 64, 0.12);
+}
+.visual-builder-library > span {
+  color: #a08090;
+  font-size: 0.62rem;
+  font-weight: 760;
+  letter-spacing: 0.1em;
+}
+.visual-builder-library > p {
+  margin: 0;
+  color: #735568;
+  font-size: 0.7rem;
+  line-height: 1.45;
+}
+.visual-builder-library .visual-field { margin: 0.15rem 0; }
+.visual-builder-outline {
+  display: grid;
+  gap: 0.2rem;
+  max-height: 130px;
+  overflow-y: auto;
+  padding: 0.3rem;
+  border: 1px solid rgba(130, 0, 64, 0.12);
+  border-radius: 0.45rem;
+  background: #faf5f7;
+}
+.visual-builder-empty {
+  padding: 0.45rem;
+  color: #a08090;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+.visual-builder-elements {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+.visual-builder-elements button {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.45rem;
+  border: 1px solid rgba(130, 0, 64, 0.14);
+  border-radius: 0.42rem;
+  background: white;
+  color: #513240;
+  font: inherit;
+  font-size: 0.68rem;
+  cursor: grab;
+}
+.visual-builder-elements button:hover { border-color: #820040; color: #820040; }
 
 .visual-canvas-area {
   min-width: 0;
@@ -835,6 +891,43 @@
 
 .visual-public-preview {
   pointer-events: auto;
+}
+.visual-public-preview .page-builder-node-editable {
+  cursor: pointer;
+  outline: 1px dashed transparent;
+  outline-offset: -2px;
+}
+.visual-public-preview .page-builder-node-editable:hover {
+  outline-color: rgba(230, 74, 145, 0.7);
+}
+.visual-public-preview .page-builder-node-selected {
+  outline: 2px solid #e64a91 !important;
+  outline-offset: -2px;
+}
+.visual-public-preview .page-builder-editor-label { pointer-events: none; }
+.visual-builder-preview {
+  margin-top: 1.5rem;
+  border-top: 1px dashed rgba(130, 0, 64, 0.25);
+  background: #fffafd;
+}
+.visual-builder-preview > p {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid rgba(130, 0, 64, 0.12);
+  color: #820040;
+  font-size: 0.7rem;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.visual-builder-drop-target {
+  margin: 1rem;
+  padding: 1.25rem;
+  border: 1px dashed rgba(130, 0, 64, 0.3);
+  border-radius: 0.55rem;
+  color: #735568;
+  font-size: 0.78rem;
+  text-align: center;
 }
 .visual-public-preview .hero,
 .visual-public-preview .partner-hero {

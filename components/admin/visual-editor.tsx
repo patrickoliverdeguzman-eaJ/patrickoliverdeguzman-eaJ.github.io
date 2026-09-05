@@ -4,11 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   ArrowLeft,
+  Box,
   ChevronDown,
+  Columns3,
   Copy,
   GripVertical,
+  Heading,
   Image as ImageIcon,
   Layers3,
+  Minus,
   Monitor,
   MousePointer2,
   Plus,
@@ -17,10 +21,26 @@ import {
   Send,
   Smartphone,
   Tablet,
+  Text,
   Undo2,
 } from 'lucide-react';
 import { CMS_API } from '@/lib/cms-api';
 import { adminPath } from '@/lib/site-paths';
+import { PageBuilderRenderer } from '@/components/page-builder-renderer';
+import {
+  appendBuilderNode,
+  BUILDER_SLOTS,
+  type BuilderNode,
+  type BuilderNodeType,
+  createBuilderNode,
+  duplicateBuilderNode,
+  emptyBuilderPage,
+  findBuilderNode,
+  moveBuilderNode,
+  normaliseBuilderPage,
+  removeBuilderNode,
+  updateBuilderNode,
+} from '@/lib/page-builder';
 import siteContentSeed from '@/cms-worker/seed/site-content.json';
 import {
   DEFAULT_HOME,
@@ -277,6 +297,9 @@ export function VisualEditor() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [layersOpen, setLayersOpen] = useState(true);
   const [initializing, setInitializing] = useState(false);
+  const [activeBuilderSlot, setActiveBuilderSlot] = useState(BUILDER_SLOTS[0].id);
+  const [selectedBuilderNodeId, setSelectedBuilderNodeId] = useState<string | null>(null);
+  const [draggedBuilderNodeId, setDraggedBuilderNodeId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -320,14 +343,20 @@ export function VisualEditor() {
   }, [load]);
 
   const pageLayers = PAGE_LAYERS[page];
+  const builderDocument = findDocument(documents, 'builder_page', page);
+  const builderPage = builderDocument ? normaliseBuilderPage(builderDocument.data) : emptyBuilderPage();
   const hasPageBindings =
     page === 'home'
       ? Boolean(findDocument(documents, 'home_section', 'hero'))
       : Boolean(findDocument(documents, 'page_section', 'partners-hero'));
   const pageDocuments = useMemo(() => {
     const types = new Set(pageLayers.map((layer) => layer.type));
-    return documents.filter((document) => types.has(document.type));
-  }, [documents, pageLayers]);
+    return documents.filter(
+      (document) =>
+        types.has(document.type) ||
+        (document.type === 'builder_page' && document.slug === page),
+    );
+  }, [documents, page, pageLayers]);
 
   const markChanged = (nextDocuments: CmsDocument[], ids: string[]) => {
     setHistory((items) => [...items, structuredClone(documents)].slice(-30));
@@ -347,8 +376,87 @@ export function VisualEditor() {
     markChanged(next, [field.documentId]);
   };
 
-  const selectDocument = (document: CmsDocument, key = '__title') =>
+  const updateBuilder = (nextPage: ReturnType<typeof emptyBuilderPage>) => {
+    if (!builderDocument) return;
+    const next = documents.map((document) =>
+      document.id === builderDocument.id ? { ...document, data: nextPage } : document,
+    );
+    markChanged(next, [builderDocument.id]);
+  };
+
+  const ensureBuilderDocument = async (): Promise<CmsDocument | null> => {
+    if (builderDocument) return builderDocument;
+    setStatus('saving');
+    setMessage('Preparing a structured page canvas…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          type: 'builder_page',
+          slug: page,
+          title: `${page === 'home' ? 'Home' : 'Partners'} custom blocks`,
+          data: emptyBuilderPage(),
+          note: 'Created structured visual-builder canvas',
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+      if (!response.ok || !result.document) throw new Error(result.error ?? 'The builder canvas could not be created.');
+      return result.document;
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The builder canvas could not be created.');
+      return null;
+    }
+  };
+
+  const addBuilderElement = async (type: BuilderNodeType) => {
+    const document = await ensureBuilderDocument();
+    if (!document) return;
+    const currentPage = normaliseBuilderPage(document.data);
+    const selectedNode = selectedBuilderNodeId ? findBuilderNode(currentPage, selectedBuilderNodeId) : undefined;
+    const canContain = Boolean(selectedNode && ['section', 'container', 'column', 'card'].includes(selectedNode.type));
+    const node = createBuilderNode(type);
+    const nextPage = appendBuilderNode(currentPage, activeBuilderSlot, node, canContain ? selectedNode?.id : undefined);
+    const nextDocuments = (document.id === builderDocument?.id ? documents : [...documents, document]).map((entry) =>
+      entry.id === document.id ? { ...entry, data: nextPage } : entry,
+    );
+    markChanged(nextDocuments, [document.id]);
+    setSelectedBuilderNodeId(node.id);
+    setSelected(null);
+    setStatus('saved');
+    setMessage(`${type.replace('_', ' ')} added to the draft`);
+  };
+
+  const changeBuilderNode = (nodeId: string, change: (node: BuilderNode) => BuilderNode) => {
+    updateBuilder(updateBuilderNode(builderPage, nodeId, change));
+  };
+
+  const removeSelectedBuilderNode = () => {
+    if (!selectedBuilderNodeId) return;
+    updateBuilder(removeBuilderNode(builderPage, selectedBuilderNodeId).page);
+    setSelectedBuilderNodeId(null);
+    setMessage('Custom block removed from the draft');
+  };
+
+  const duplicateSelectedBuilderNode = () => {
+    if (!selectedBuilderNodeId) return;
+    updateBuilder(duplicateBuilderNode(builderPage, selectedBuilderNodeId));
+    setMessage('Custom block duplicated in the draft');
+  };
+
+  const moveBuilderBlock = (targetId: string) => {
+    if (!draggedBuilderNodeId) return;
+    updateBuilder(moveBuilderNode(builderPage, draggedBuilderNodeId, targetId));
+    setDraggedBuilderNodeId(null);
+    setMessage('Custom block order updated');
+  };
+
+  const selectDocument = (document: CmsDocument, key = '__title') => {
+    setSelectedBuilderNodeId(null);
     setSelected({ documentId: document.id, key });
+  };
 
   const initializeEditableDrafts = async () => {
     setInitializing(true);
@@ -363,7 +471,13 @@ export function VisualEditor() {
       const known = new Set(
         documents.map((document) => `${document.type}/${document.slug}`),
       );
-      const toCreate = siteContentSeed.documents.filter(
+      const builderDrafts = (['home', 'partners'] as PageKey[]).map((pageKey) => ({
+        type: 'builder_page',
+        slug: pageKey,
+        title: `${pageKey === 'home' ? 'Home' : 'Partners'} custom blocks`,
+        data: emptyBuilderPage(),
+      }));
+      const toCreate = [...siteContentSeed.documents, ...builderDrafts].filter(
         (entry) => !known.has(`${entry.type}/${entry.slug}`),
       );
       const created: CmsDocument[] = [];
@@ -706,6 +820,9 @@ export function VisualEditor() {
   const selectedDocument = selected
     ? documents.find((document) => document.id === selected.documentId)
     : undefined;
+  const selectedBuilderNode = selectedBuilderNodeId
+    ? findBuilderNode(builderPage, selectedBuilderNodeId)
+    : undefined;
   const selectedFields = selectedDocument
     ? [
         { key: '__title', value: selectedDocument.title },
@@ -751,6 +868,8 @@ export function VisualEditor() {
               onClick={() => {
                 setPage(key);
                 setSelected(null);
+                setSelectedBuilderNodeId(null);
+                setActiveBuilderSlot(BUILDER_SLOTS[0].id);
               }}
             >
               {key === 'home' ? 'Home' : 'Partners'}
@@ -918,9 +1037,66 @@ export function VisualEditor() {
               </>
             )}
           </div>
+          <div className="visual-builder-library">
+            <span>STRUCTURED BUILDER</span>
+            <p>Add safe page blocks. Existing site sections stay protected.</p>
+            <label className="visual-field">
+              <span>Insert location</span>
+              <select value={activeBuilderSlot} onChange={(event) => setActiveBuilderSlot(event.target.value as typeof activeBuilderSlot)}>
+                {BUILDER_SLOTS.map((slot) => <option key={slot.id} value={slot.id}>{slot.label}</option>)}
+              </select>
+            </label>
+            <div className="visual-builder-outline">
+              {builderPage.slots[activeBuilderSlot].length ? builderPage.slots[activeBuilderSlot].map((node) => (
+                <button
+                  key={node.id}
+                  type="button"
+                  draggable
+                  className={`visual-layer ${selectedBuilderNodeId === node.id ? 'active' : ''}`}
+                  onClick={() => { setSelectedBuilderNodeId(node.id); setSelected(null); }}
+                  onDragStart={(event) => { event.dataTransfer.setData('application/x-infostorage-builder-node', node.id); setDraggedBuilderNodeId(node.id); }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => { event.preventDefault(); moveBuilderBlock(node.id); }}
+                >
+                  <GripVertical size={13} /> {node.type}
+                </button>
+              )) : <small className="visual-builder-empty">Drop or add a block here.</small>}
+            </div>
+            <div className="visual-builder-elements">
+              {[
+                { type: 'section', label: 'Section', Icon: Box },
+                { type: 'container', label: 'Container', Icon: Box },
+                { type: 'heading', label: 'Heading', Icon: Heading },
+                { type: 'text', label: 'Text', Icon: Text },
+                { type: 'image', label: 'Image', Icon: ImageIcon },
+                { type: 'button', label: 'Button', Icon: MousePointer2 },
+                { type: 'columns', label: 'Columns', Icon: Columns3 },
+                { type: 'card', label: 'Card', Icon: Box },
+                { type: 'divider', label: 'Divider', Icon: Minus },
+                { type: 'spacer', label: 'Spacer', Icon: Plus },
+              ].map(({ type, label, Icon }) => (
+                <button
+                  key={type}
+                  type="button"
+                  draggable
+                  onClick={() => void addBuilderElement(type as BuilderNodeType)}
+                  onDragStart={(event) => { event.dataTransfer.setData('application/x-infostorage-builder-new', type); event.dataTransfer.effectAllowed = 'copy'; }}
+                >
+                  <Icon size={14} /> {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </aside>
 
-        <main className="visual-canvas-area">
+        <main
+          className="visual-canvas-area"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            const type = event.dataTransfer.getData('application/x-infostorage-builder-new');
+            if (type && ['section', 'container', 'heading', 'text', 'image', 'button', 'columns', 'card', 'divider', 'spacer'].includes(type)) void addBuilderElement(type as BuilderNodeType);
+          }}
+        >
           {!hasPageBindings && (
             <div className="visual-initialize-banner" role="status">
               <div>
@@ -951,6 +1127,25 @@ export function VisualEditor() {
             ) : (
               <PartnersPreview {...previewProps} />
             )}
+            <section className="visual-builder-preview" aria-label="Custom block preview">
+              <p>
+                Custom blocks · {BUILDER_SLOTS.find((slot) => slot.id === activeBuilderSlot)?.label}
+              </p>
+              <PageBuilderRenderer
+                page={builderPage}
+                slot={activeBuilderSlot}
+                editable
+                selectedNodeId={selectedBuilderNodeId}
+                onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
+                onDropNode={moveBuilderBlock}
+                onDragStartNode={setDraggedBuilderNodeId}
+              />
+              {!builderPage.slots[activeBuilderSlot].length && (
+                <div className="visual-builder-drop-target">
+                  Drag an element here or choose one from the library.
+                </div>
+              )}
+            </section>
           </div>
         </main>
 
@@ -959,7 +1154,81 @@ export function VisualEditor() {
             <MousePointer2 size={16} />
             <span>Content settings</span>
           </div>
-          {!selectedDocument ? (
+          {selectedBuilderNode ? (
+            <div className="visual-settings-content">
+              <div className="visual-selection-label">
+                <span>Structured block</span>
+                <strong>{selectedBuilderNode.type}</strong>
+                <small>Safe component settings only — no raw HTML or custom CSS.</small>
+              </div>
+              {['section', 'container', 'column', 'card'].includes(selectedBuilderNode.type) && (
+                <label className="visual-field">
+                  <span>Editor label</span>
+                  <input value={String(selectedBuilderNode.props.label ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, label: event.target.value } }))} />
+                </label>
+              )}
+              {['heading', 'text'].includes(selectedBuilderNode.type) && (
+                <label className="visual-field">
+                  <span>{selectedBuilderNode.type === 'heading' ? 'Heading' : 'Text'}</span>
+                  <textarea value={String(selectedBuilderNode.props.text ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, text: event.target.value } }))} />
+                </label>
+              )}
+              {selectedBuilderNode.type === 'heading' && (
+                <label className="visual-field">
+                  <span>Heading level</span>
+                  <select value={String(selectedBuilderNode.props.level ?? 2)} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, level: Number(event.target.value) } }))}>
+                    <option value="1">H1</option><option value="2">H2</option><option value="3">H3</option><option value="4">H4</option>
+                  </select>
+                </label>
+              )}
+              {selectedBuilderNode.type === 'image' && (
+                <>
+                  <label className="visual-field">
+                    <span>Image URL</span>
+                    <input value={String(selectedBuilderNode.props.src ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, src: event.target.value } }))} />
+                  </label>
+                  <label className="visual-field">
+                    <span>Alt text</span>
+                    <input value={String(selectedBuilderNode.props.alt ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, alt: event.target.value } }))} />
+                  </label>
+                  {media.length > 0 && (
+                    <label className="visual-field">
+                      <span>Media library</span>
+                      <select value="" onChange={(event) => { if (event.target.value) changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, src: event.target.value } })); }}>
+                        <option value="">Choose an uploaded image…</option>
+                        {media.filter((asset) => asset.mimeType.startsWith('image/')).map((asset) => <option key={asset.id} value={asset.url}>{asset.filename}</option>)}
+                      </select>
+                    </label>
+                  )}
+                </>
+              )}
+              {selectedBuilderNode.type === 'button' && (
+                <>
+                  <label className="visual-field"><span>Button label</span><input value={String(selectedBuilderNode.props.label ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, label: event.target.value } }))} /></label>
+                  <label className="visual-field"><span>Destination</span><input value={String(selectedBuilderNode.props.href ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, href: event.target.value } }))} /></label>
+                  <label className="visual-field"><span>Button treatment</span><select value={String(selectedBuilderNode.props.variant ?? 'primary')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, variant: event.target.value } }))}><option value="primary">Primary</option><option value="secondary">Secondary</option></select></label>
+                </>
+              )}
+              {selectedBuilderNode.type === 'columns' && (
+                <label className="visual-field"><span>Desktop columns</span><select value={String(selectedBuilderNode.props.columns ?? 2)} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, columns: Number(event.target.value) } }))}><option value="1">One column</option><option value="2">Two columns</option><option value="3">Three columns</option></select></label>
+              )}
+              {selectedBuilderNode.type === 'spacer' && (
+                <label className="visual-field"><span>Spacer size</span><select value={String(selectedBuilderNode.props.size ?? 'regular')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, size: event.target.value } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+              )}
+              <section className="visual-section-actions">
+                <h3>Layout & visibility</h3>
+                <label className="visual-field"><span>Colour treatment</span><select value={selectedBuilderNode.styles.tone} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, tone: event.target.value as BuilderNode['styles']['tone'] } }))}><option value="default">Default</option><option value="muted">Soft neutral</option><option value="brand">Brand dark</option></select></label>
+                <label className="visual-field"><span>Vertical spacing</span><select value={selectedBuilderNode.styles.padding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, padding: event.target.value as BuilderNode['styles']['padding'] } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                <label className="visual-field"><span>Content alignment</span><select value={selectedBuilderNode.styles.align} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, align: event.target.value as BuilderNode['styles']['align'] } }))}><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="visual-field"><span>Visibility</span><select value={selectedBuilderNode.responsive.visibility} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { visibility: event.target.value as BuilderNode['responsive']['visibility'] } }))}><option value="all">All devices</option><option value="desktop">Desktop only</option><option value="mobile">Mobile only</option></select></label>
+              </section>
+              <section className="visual-section-actions">
+                <h3>Block actions</h3>
+                <button type="button" onClick={duplicateSelectedBuilderNode}><Copy size={15} /> Duplicate</button>
+                <button type="button" className="danger" onClick={removeSelectedBuilderNode}><Archive size={15} /> Remove</button>
+              </section>
+            </div>
+          ) : !selectedDocument ? (
             <div className="visual-empty-settings">
               <MousePointer2 size={24} />
               <p>

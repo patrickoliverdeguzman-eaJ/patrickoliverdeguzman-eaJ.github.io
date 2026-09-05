@@ -13,6 +13,7 @@ import {
   ServerCog,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { PageBuilderRenderer } from '@/components/page-builder-renderer';
 import SiteChatbot from './site-chatbot';
 import { DEFAULT_HOME, loadHomeContent, type HomeContent } from '@/lib/site-content';
 
@@ -112,6 +113,8 @@ export default function Home() {
         </div>
       </section>
 
+      <PageBuilderRenderer page={content.builder} slot="afterHero" />
+
       <section className="intro section-pad" id="approach">
         <div className="section-kicker reveal">{approach.kicker}</div>
         <div className="intro-grid">
@@ -138,6 +141,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <PageBuilderRenderer page={content.builder} slot="afterApproach" />
 
       <section className="solutions-section section-pad" id="solutions">
         <div className="solutions-heading reveal">
@@ -178,6 +183,8 @@ export default function Home() {
           })}
         </div>
       </section>
+
+      <PageBuilderRenderer page={content.builder} slot="afterSolutions" />
 
       <section className="continuity-panel section-pad">
         <div className="continuity-art" aria-hidden="true">
@@ -220,6 +227,8 @@ export default function Home() {
         </div>
       </section>
 
+      <PageBuilderRenderer page={content.builder} slot="afterServices" />
+
       <section className="sectors section-pad">
         <div className="sectors-copy reveal">
           <p className="section-kicker">{sectors.kicker}</p>
@@ -231,6 +240,8 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      <PageBuilderRenderer page={content.builder} slot="beforeContact" />
 
       <section className="contact-panel" id="contact">
         <div className="contact-orbit" aria-hidden="true" />
@@ -250,6 +261,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <PageBuilderRenderer page={content.builder} slot="afterContent" />
 
       <footer className="site-footer">
         <a href="#top" className="brand footer-brand" aria-label="Back to top">
