@@ -15,6 +15,8 @@
 /.next/
 /.vinext/
 /out/
+cms-worker/.dev.vars
+cms-worker/.wrangler/
 
 # misc
 .DS_Store
