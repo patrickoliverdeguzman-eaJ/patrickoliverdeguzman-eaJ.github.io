@@ -29,7 +29,9 @@ import { adminPath } from '@/lib/site-paths';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
 import {
   appendBuilderNode,
+  BUILDER_NODE_TYPES,
   BUILDER_SLOTS,
+  cloneBuilderNode,
   type BuilderNode,
   type BuilderNodeType,
   createBuilderNode,
@@ -44,8 +46,11 @@ import {
 import siteContentSeed from '@/cms-worker/seed/site-content.json';
 import {
   DEFAULT_HOME,
+  DEFAULT_DESIGN_SYSTEM,
   DEFAULT_PARTNERS,
+  designSystemFromDoc,
   type ClientContent,
+  type DesignSystem,
   type PartnerContent,
   type SolutionContent,
 } from '@/lib/site-content';
@@ -195,6 +200,70 @@ const DEFAULT_DATA: Record<string, Record<string, unknown>> = {
   client: { logo: '', website: '' },
 };
 
+const DESIGN_BLOCKS: Array<{ type: BuilderNodeType; label: string; Icon: typeof Box }> = [
+  { type: 'brand_hero', label: 'Brand hero', Icon: Layers3 },
+  { type: 'split_intro', label: 'Split introduction', Icon: Text },
+  { type: 'principle_grid', label: 'Principle grid', Icon: Columns3 },
+  { type: 'solution_grid', label: 'Solution grid', Icon: Box },
+  { type: 'continuity_panel', label: 'Continuity panel', Icon: Layers3 },
+  { type: 'service_list', label: 'Service list', Icon: Text },
+  { type: 'tag_band', label: 'Tag band', Icon: Box },
+  { type: 'contact_panel', label: 'Contact panel', Icon: MousePointer2 },
+  { type: 'partner_directory', label: 'Partner directory', Icon: Box },
+  { type: 'logo_grid', label: 'Logo grid', Icon: ImageIcon },
+  { type: 'method_list', label: 'Method list', Icon: Text },
+];
+
+type BuilderField = { key: string; label: string; multiline?: boolean };
+
+const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
+  brand_hero: [
+    { key: 'eyebrow', label: 'Eyebrow' }, { key: 'title', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
+    { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'primaryLabel', label: 'Primary button label' }, { key: 'primaryHref', label: 'Primary button destination' },
+    { key: 'secondaryLabel', label: 'Secondary button label' }, { key: 'secondaryHref', label: 'Secondary button destination' }, { key: 'logo', label: 'Logo or stage image URL' },
+  ],
+  split_intro: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
+    { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'linkLabel', label: 'Link label' }, { key: 'linkHref', label: 'Link destination' },
+  ],
+  principle_grid: [{ key: 'items', label: 'Principles — one “Title | Description” per line', multiline: true }],
+  solution_grid: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
+    { key: 'items', label: 'Solutions — “Title | Description | Feature; Feature” per line', multiline: true },
+  ],
+  continuity_panel: [
+    { key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
+    { key: 'ctaLabel', label: 'Button label' }, { key: 'ctaHref', label: 'Button destination' },
+  ],
+  service_list: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
+    { key: 'items', label: 'Services — one per line', multiline: true }, { key: 'href', label: 'Service destination' },
+  ],
+  tag_band: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'tags', label: 'Tags — one per line', multiline: true }],
+  contact_panel: [
+    { key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
+    { key: 'primaryLabel', label: 'Primary button label' }, { key: 'primaryHref', label: 'Primary button destination' }, { key: 'secondaryLabel', label: 'Secondary button label' }, { key: 'secondaryHref', label: 'Secondary button destination' },
+  ],
+  partner_directory: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'note', label: 'Supporting note', multiline: true },
+    { key: 'items', label: 'Partners — “Name | Focus” per line', multiline: true },
+  ],
+  logo_grid: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
+    { key: 'items', label: 'Clients — “Name | Logo URL” per line', multiline: true },
+  ],
+  method_list: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'items', label: 'Methods — “Title | Description” per line', multiline: true },
+  ],
+};
+
+const DESIGN_COLOR_FIELDS: Array<{ key: keyof Pick<DesignSystem, 'primary' | 'primaryDeep' | 'accent' | 'accentSoft' | 'surface' | 'surfaceMuted' | 'ink' | 'muted'>; label: string }> = [
+  { key: 'primary', label: 'Primary brand' }, { key: 'primaryDeep', label: 'Deep brand' },
+  { key: 'accent', label: 'Accent' }, { key: 'accentSoft', label: 'Accent light' },
+  { key: 'surface', label: 'Main surface' }, { key: 'surfaceMuted', label: 'Soft surface' },
+  { key: 'ink', label: 'Heading and body ink' }, { key: 'muted', label: 'Supporting text' },
+];
+
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
@@ -306,6 +375,43 @@ function EditorText({
   );
 }
 
+function BuilderLayerTree({
+  nodes,
+  selectedNodeId,
+  onSelect,
+  depth = 0,
+}: {
+  nodes: BuilderNode[];
+  selectedNodeId: string | null;
+  onSelect: (nodeId: string) => void;
+  depth?: number;
+}) {
+  return (
+    <>
+      {nodes.map((node) => (
+        <div key={node.id} className="visual-builder-tree-node">
+          <button
+            type="button"
+            className={`visual-layer ${selectedNodeId === node.id ? 'active' : ''}`}
+            style={{ paddingLeft: `${0.7 + depth * 0.85}rem` }}
+            onClick={() => onSelect(node.id)}
+          >
+            <Layers3 size={13} /> {node.type.replace('_', ' ')}
+          </button>
+          {node.children.length > 0 && (
+            <BuilderLayerTree
+              nodes={node.children}
+              selectedNodeId={selectedNodeId}
+              onSelect={onSelect}
+              depth={depth + 1}
+            />
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
 export function VisualEditor() {
   const [page, setPage] = useState<PageKey>('home');
   const [documents, setDocuments] = useState<CmsDocument[]>([]);
@@ -329,6 +435,7 @@ export function VisualEditor() {
   const [addingPage, setAddingPage] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageSlug, setNewPageSlug] = useState('');
+  const [copiedBuilderNode, setCopiedBuilderNode] = useState<BuilderNode | null>(null);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -422,6 +529,15 @@ export function VisualEditor() {
       return { ...document, data: { ...document.data, [field.key]: value } };
     });
     markChanged(next, [field.documentId]);
+  };
+
+  const updateDesignField = (documentId: string, key: keyof DesignSystem, value: string) => {
+    const next = documents.map((document) => {
+      if (document.id !== documentId) return document;
+      const design = designSystemFromDoc(document.data.design);
+      return { ...document, data: { ...document.data, design: { ...design, [key]: value } } };
+    });
+    markChanged(next, [documentId]);
   };
 
   const updateHeaderLinks = (documentId: string, links: HeaderLink[]) => {
@@ -519,7 +635,7 @@ export function VisualEditor() {
     if (!document) return;
     const currentPage = normaliseBuilderPage(document.data);
     const selectedNode = selectedBuilderNodeId ? findBuilderNode(currentPage, selectedBuilderNodeId) : undefined;
-    const canContain = Boolean(selectedNode && ['section', 'container', 'column', 'card'].includes(selectedNode.type));
+    const canContain = Boolean(selectedNode && ['section', 'container', 'columns', 'column', 'card'].includes(selectedNode.type));
     const node = createBuilderNode(type);
     const nextPage = appendBuilderNode(currentPage, activeBuilderSlot, node, canContain ? selectedNode?.id : undefined);
     const nextDocuments = (document.id === builderDocument?.id ? documents : [...documents, document]).map((entry) =>
@@ -547,6 +663,23 @@ export function VisualEditor() {
     if (!selectedBuilderNodeId) return;
     updateBuilder(duplicateBuilderNode(builderPage, selectedBuilderNodeId));
     setMessage('Custom block duplicated in the draft');
+  };
+
+  const copySelectedBuilderNode = () => {
+    if (!selectedBuilderNode) return;
+    setCopiedBuilderNode(cloneBuilderNode(selectedBuilderNode));
+    setMessage('Block copied. Choose a location and paste it into the draft.');
+  };
+
+  const pasteBuilderNode = () => {
+    if (!copiedBuilderNode) return;
+    const parent = selectedBuilderNode && ['section', 'container', 'columns', 'column', 'card'].includes(selectedBuilderNode.type)
+      ? selectedBuilderNode.id
+      : undefined;
+    const node = cloneBuilderNode(copiedBuilderNode);
+    updateBuilder(appendBuilderNode(builderPage, activeBuilderSlot, node, parent));
+    setSelectedBuilderNodeId(node.id);
+    setMessage('Copied block pasted into the draft');
   };
 
   const moveBuilderBlock = (targetId: string) => {
@@ -930,6 +1063,9 @@ export function VisualEditor() {
     selectedDocument?.type === 'navigation'
       ? headerLinks(selectedDocument.data.items)
       : [];
+  const selectedDesign = selectedDocument?.type === 'site_settings'
+    ? designSystemFromDoc(selectedDocument.data.design)
+    : DEFAULT_DESIGN_SYSTEM;
   const selectedFields = selectedDocument
     ? [
         { key: '__title', value: selectedDocument.title },
@@ -1218,7 +1354,7 @@ export function VisualEditor() {
           )}
           <div className="visual-builder-library">
             <span>STRUCTURED BUILDER</span>
-            <p>Add safe page blocks. Existing site sections stay protected.</p>
+            <p>Reusable INFOStorage design blocks. Every block stays structured, responsive, and editable.</p>
             <label className="visual-field">
               <span>Insert location</span>
               <select value={activeBuilderSlot} onChange={(event) => setActiveBuilderSlot(event.target.value as typeof activeBuilderSlot)}>
@@ -1226,20 +1362,13 @@ export function VisualEditor() {
               </select>
             </label>
             <div className="visual-builder-outline">
-              {builderPage.slots[activeBuilderSlot].length ? builderPage.slots[activeBuilderSlot].map((node) => (
-                <button
-                  key={node.id}
-                  type="button"
-                  draggable
-                  className={`visual-layer ${selectedBuilderNodeId === node.id ? 'active' : ''}`}
-                  onClick={() => { setSelectedBuilderNodeId(node.id); setSelected(null); }}
-                  onDragStart={(event) => { event.dataTransfer.setData('application/x-infostorage-builder-node', node.id); setDraggedBuilderNodeId(node.id); }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => { event.preventDefault(); moveBuilderBlock(node.id); }}
-                >
-                  <GripVertical size={13} /> {node.type}
-                </button>
-              )) : <small className="visual-builder-empty">Drop or add a block here.</small>}
+              {builderPage.slots[activeBuilderSlot].length ? (
+                <BuilderLayerTree
+                  nodes={builderPage.slots[activeBuilderSlot]}
+                  selectedNodeId={selectedBuilderNodeId}
+                  onSelect={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
+                />
+              ) : <small className="visual-builder-empty">Drop or add a block here.</small>}
             </div>
             <div className="visual-builder-elements">
               {[
@@ -1253,6 +1382,7 @@ export function VisualEditor() {
                 { type: 'card', label: 'Card', Icon: Box },
                 { type: 'divider', label: 'Divider', Icon: Minus },
                 { type: 'spacer', label: 'Spacer', Icon: Plus },
+                ...DESIGN_BLOCKS,
               ].map(({ type, label, Icon }) => (
                 <button
                   key={type}
@@ -1273,7 +1403,7 @@ export function VisualEditor() {
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             const type = event.dataTransfer.getData('application/x-infostorage-builder-new');
-            if (type && ['section', 'container', 'heading', 'text', 'image', 'button', 'columns', 'card', 'divider', 'spacer'].includes(type)) void addBuilderElement(type as BuilderNodeType);
+            if (type && BUILDER_NODE_TYPES.includes(type as BuilderNodeType)) void addBuilderElement(type as BuilderNodeType);
           }}
         >
           {!hasPageBindings && (
@@ -1352,6 +1482,22 @@ export function VisualEditor() {
                   <input value={String(selectedBuilderNode.props.label ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, label: event.target.value } }))} />
                 </label>
               )}
+              {DESIGN_BLOCK_FIELDS[selectedBuilderNode.type]?.map((field) => (
+                <label key={field.key} className="visual-field">
+                  <span>{field.label}</span>
+                  {field.multiline ? (
+                    <textarea
+                      value={String(selectedBuilderNode.props[field.key] ?? '')}
+                      onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.value } }))}
+                    />
+                  ) : (
+                    <input
+                      value={String(selectedBuilderNode.props[field.key] ?? '')}
+                      onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.value } }))}
+                    />
+                  )}
+                </label>
+              ))}
               {['heading', 'text'].includes(selectedBuilderNode.type) && (
                 <label className="visual-field">
                   <span>{selectedBuilderNode.type === 'heading' ? 'Heading' : 'Text'}</span>
@@ -1402,14 +1548,28 @@ export function VisualEditor() {
               )}
               <section className="visual-section-actions">
                 <h3>Layout & visibility</h3>
-                <label className="visual-field"><span>Colour treatment</span><select value={selectedBuilderNode.styles.tone} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, tone: event.target.value as BuilderNode['styles']['tone'] } }))}><option value="default">Default</option><option value="muted">Soft neutral</option><option value="brand">Brand dark</option></select></label>
+                <label className="visual-field"><span>Colour treatment</span><select value={selectedBuilderNode.styles.tone} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, tone: event.target.value as BuilderNode['styles']['tone'] } }))}><option value="default">Default</option><option value="muted">Soft neutral</option><option value="brand">Brand dark</option><option value="gradient">Brand gradient</option></select></label>
                 <label className="visual-field"><span>Vertical spacing</span><select value={selectedBuilderNode.styles.padding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, padding: event.target.value as BuilderNode['styles']['padding'] } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
                 <label className="visual-field"><span>Content alignment</span><select value={selectedBuilderNode.styles.align} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, align: event.target.value as BuilderNode['styles']['align'] } }))}><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
-                <label className="visual-field"><span>Visibility</span><select value={selectedBuilderNode.responsive.visibility} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { visibility: event.target.value as BuilderNode['responsive']['visibility'] } }))}><option value="all">All devices</option><option value="desktop">Desktop only</option><option value="mobile">Mobile only</option></select></label>
+                <label className="visual-field"><span>Content width</span><select value={selectedBuilderNode.styles.width} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, width: event.target.value as BuilderNode['styles']['width'] } }))}><option value="content">Content</option><option value="wide">Wide</option><option value="full">Full bleed</option></select></label>
+                <label className="visual-field"><span>Corner radius</span><select value={selectedBuilderNode.styles.radius} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, radius: event.target.value as BuilderNode['styles']['radius'] } }))}><option value="none">None</option><option value="sm">Small</option><option value="md">Medium</option><option value="lg">Large</option></select></label>
+                <label className="visual-field"><span>Border</span><select value={selectedBuilderNode.styles.border} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, border: event.target.value as BuilderNode['styles']['border'] } }))}><option value="none">None</option><option value="soft">Soft</option><option value="strong">Strong</option></select></label>
+                <label className="visual-field"><span>Shadow</span><select value={selectedBuilderNode.styles.shadow} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, shadow: event.target.value as BuilderNode['styles']['shadow'] } }))}><option value="none">None</option><option value="soft">Soft</option><option value="lifted">Lifted</option></select></label>
+                <label className="visual-field"><span>Internal gap</span><select value={selectedBuilderNode.styles.gap} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, gap: event.target.value as BuilderNode['styles']['gap'] } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                <label className="visual-field"><span>Hover effect</span><select value={selectedBuilderNode.styles.hover} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, hover: event.target.value as BuilderNode['styles']['hover'] } }))}><option value="none">None</option><option value="lift">Lift</option></select></label>
+                <label className="visual-field"><span>Entrance motion</span><select value={selectedBuilderNode.styles.motion} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, motion: event.target.value as BuilderNode['styles']['motion'] } }))}><option value="none">None</option><option value="reveal">Reveal</option><option value="float">Float</option></select></label>
+                <label className="visual-field"><span>Visibility</span><select value={selectedBuilderNode.responsive.visibility} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, visibility: event.target.value as BuilderNode['responsive']['visibility'] } }))}><option value="all">All devices</option><option value="desktop">Desktop only</option><option value="mobile">Mobile only</option></select></label>
+                <label className="visual-field"><span>Tablet alignment</span><select value={selectedBuilderNode.responsive.tabletAlign} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, tabletAlign: event.target.value as BuilderNode['responsive']['tabletAlign'] } }))}><option value="inherit">Use desktop</option><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="visual-field"><span>Mobile alignment</span><select value={selectedBuilderNode.responsive.mobileAlign} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, mobileAlign: event.target.value as BuilderNode['responsive']['mobileAlign'] } }))}><option value="inherit">Use tablet</option><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="visual-field"><span>Tablet spacing</span><select value={selectedBuilderNode.responsive.tabletPadding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, tabletPadding: event.target.value as BuilderNode['responsive']['tabletPadding'] } }))}><option value="inherit">Use desktop</option><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                <label className="visual-field"><span>Mobile spacing</span><select value={selectedBuilderNode.responsive.mobilePadding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, mobilePadding: event.target.value as BuilderNode['responsive']['mobilePadding'] } }))}><option value="inherit">Use tablet</option><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                {selectedBuilderNode.type === 'columns' && <><label className="visual-field"><span>Tablet columns</span><select value={selectedBuilderNode.responsive.tabletColumns} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, tabletColumns: event.target.value === 'inherit' ? 'inherit' : Number(event.target.value) as 1 | 2 | 3 | 4 } }))}><option value="inherit">Use desktop</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option><option value="4">Four</option></select></label><label className="visual-field"><span>Mobile columns</span><select value={selectedBuilderNode.responsive.mobileColumns} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, mobileColumns: event.target.value === 'inherit' ? 'inherit' : Number(event.target.value) as 1 | 2 | 3 | 4 } }))}><option value="inherit">Use tablet</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option><option value="4">Four</option></select></label></>}
               </section>
               <section className="visual-section-actions">
                 <h3>Block actions</h3>
                 <button type="button" onClick={duplicateSelectedBuilderNode}><Copy size={15} /> Duplicate</button>
+                <button type="button" onClick={copySelectedBuilderNode}><Copy size={15} /> Copy</button>
+                <button type="button" disabled={!copiedBuilderNode} onClick={pasteBuilderNode}><Plus size={15} /> Paste here</button>
                 <button type="button" className="danger" onClick={removeSelectedBuilderNode}><Archive size={15} /> Remove</button>
               </section>
             </div>
@@ -1544,6 +1704,38 @@ export function VisualEditor() {
                   >
                     <Plus size={15} /> Add header link
                   </button>
+                </section>
+              )}
+              {selectedDocument.type === 'site_settings' && (
+                <section className="visual-section-actions visual-header-editor">
+                  <h3>Global design system</h3>
+                  <p>
+                    These shared tokens drive the public website and every reusable CMS design block.
+                  </p>
+                  <div className="visual-design-tokens">
+                    {DESIGN_COLOR_FIELDS.map((field) => (
+                      <label key={field.key} className="visual-field">
+                        <span>{field.label}</span>
+                        <input
+                          type="color"
+                          value={selectedDesign[field.key]}
+                          onChange={(event) => updateDesignField(selectedDocument.id, field.key, event.target.value)}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="visual-field">
+                    <span>Corner-radius scale</span>
+                    <select value={selectedDesign.radius} onChange={(event) => updateDesignField(selectedDocument.id, 'radius', event.target.value)}>
+                      <option value="compact">Compact</option><option value="regular">Regular</option><option value="generous">Generous</option>
+                    </select>
+                  </label>
+                  <label className="visual-field">
+                    <span>Maximum content width</span>
+                    <select value={selectedDesign.container} onChange={(event) => updateDesignField(selectedDocument.id, 'container', event.target.value)}>
+                      <option value="standard">Standard</option><option value="wide">Wide</option>
+                    </select>
+                  </label>
                 </section>
               )}
               {selectedFields.map((field) => (

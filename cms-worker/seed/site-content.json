@@ -17,7 +17,19 @@
         "defaultSeoTitle": "INFOStorage | Enterprise technology, thoughtfully connected",
         "defaultSeoDescription": "Enterprise technology solutions across systems, security, data protection, and professional services.",
         "ogImage": "/og.png",
-        "social": []
+        "social": [],
+        "design": {
+          "primary": "#62002f",
+          "primaryDeep": "#280817",
+          "accent": "#820040",
+          "accentSoft": "#ffd4e4",
+          "surface": "#fff8fb",
+          "surfaceMuted": "#f1e4ea",
+          "ink": "#2a0d1c",
+          "muted": "#735568",
+          "radius": "regular",
+          "container": "standard"
+        }
       }
     },
     {

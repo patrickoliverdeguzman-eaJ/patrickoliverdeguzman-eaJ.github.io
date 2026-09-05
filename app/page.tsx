@@ -12,10 +12,10 @@ import {
   Phone,
   ServerCog,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
 import SiteChatbot from './site-chatbot';
-import { DEFAULT_HOME, loadHomeContent, type HomeContent } from '@/lib/site-content';
+import { DEFAULT_HOME, designVariables, loadHomeContent, type HomeContent } from '@/lib/site-content';
 
 const solutionIcons = [ServerCog, Network, Database, Laptop];
 
@@ -40,11 +40,11 @@ export default function Home() {
     };
   }, []);
 
-  const { navItems, headerCta, hero, approach, solutionsHeading, solutions, continuity, servicesHead, services, sectors, contact, site, footer } = content;
+  const { design, navItems, headerCta, hero, approach, solutionsHeading, solutions, continuity, servicesHead, services, sectors, contact, site, footer } = content;
 
   return (
     <>
-    <main className="site-shell">
+    <main className="site-shell" style={designVariables(design) as CSSProperties}>
       <section className="hero" id="top">
         <div className="hero-scanline" aria-hidden="true" />
 

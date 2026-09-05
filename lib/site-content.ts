@@ -39,6 +39,76 @@ export interface ClientContent {
   logoClass: string;
 }
 
+export interface DesignSystem {
+  primary: string;
+  primaryDeep: string;
+  accent: string;
+  accentSoft: string;
+  surface: string;
+  surfaceMuted: string;
+  ink: string;
+  muted: string;
+  radius: 'compact' | 'regular' | 'generous';
+  container: 'standard' | 'wide';
+}
+
+export const DEFAULT_DESIGN_SYSTEM: DesignSystem = {
+  primary: '#62002f',
+  primaryDeep: '#280817',
+  accent: '#820040',
+  accentSoft: '#ffd4e4',
+  surface: '#fff8fb',
+  surfaceMuted: '#f1e4ea',
+  ink: '#2a0d1c',
+  muted: '#735568',
+  radius: 'regular',
+  container: 'standard',
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function color(value: unknown, fallback: string): string {
+  return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value.trim())
+    ? value.trim()
+    : fallback;
+}
+
+export function designSystemFromDoc(value: unknown): DesignSystem {
+  if (!isRecord(value)) return { ...DEFAULT_DESIGN_SYSTEM };
+  return {
+    primary: color(value.primary, DEFAULT_DESIGN_SYSTEM.primary),
+    primaryDeep: color(value.primaryDeep, DEFAULT_DESIGN_SYSTEM.primaryDeep),
+    accent: color(value.accent, DEFAULT_DESIGN_SYSTEM.accent),
+    accentSoft: color(value.accentSoft, DEFAULT_DESIGN_SYSTEM.accentSoft),
+    surface: color(value.surface, DEFAULT_DESIGN_SYSTEM.surface),
+    surfaceMuted: color(value.surfaceMuted, DEFAULT_DESIGN_SYSTEM.surfaceMuted),
+    ink: color(value.ink, DEFAULT_DESIGN_SYSTEM.ink),
+    muted: color(value.muted, DEFAULT_DESIGN_SYSTEM.muted),
+    radius: value.radius === 'compact' || value.radius === 'generous' ? value.radius : 'regular',
+    container: value.container === 'wide' ? 'wide' : 'standard',
+  };
+}
+
+export function designVariables(design: DesignSystem): Record<string, string> {
+  return {
+    '--background': design.surface,
+    '--foreground': design.ink,
+    '--navy': design.primary,
+    '--navy-deep': design.primaryDeep,
+    '--ink': design.ink,
+    '--cream': design.surface,
+    '--sand': design.surfaceMuted,
+    '--muted': design.muted,
+    '--copper': design.accent,
+    '--electric': design.accentSoft,
+    '--line': `color-mix(in srgb, ${design.accent} 17%, transparent)`,
+    '--cms-radius': design.radius === 'compact' ? '0.45rem' : design.radius === 'generous' ? '1.5rem' : '0.9rem',
+    '--cms-container': design.container === 'wide' ? '1560px' : '1440px',
+  };
+}
+
 interface PublishedDoc {
   id: string;
   type: string;
@@ -182,6 +252,7 @@ export const DEFAULT_CLIENT_LIST: ClientContent[] = [
 ];
 
 export interface HomeContent {
+  design: DesignSystem;
   navItems: NavItem[];
   headerCta: { label: string; href: string };
   hero: {
@@ -217,6 +288,7 @@ export interface HomeContent {
 }
 
 export const DEFAULT_HOME: HomeContent = {
+  design: DEFAULT_DESIGN_SYSTEM,
   navItems: DEFAULT_NAV_ITEMS,
   headerCta: { label: 'Start a conversation', href: '#contact' },
   hero: {
@@ -286,6 +358,7 @@ export const DEFAULT_HOME: HomeContent = {
 };
 
 export interface PartnersContent {
+  design: DesignSystem;
   navItems: NavItem[];
   headerCta: HomeContent['headerCta'];
   site: HomeContent['site'];
@@ -300,6 +373,7 @@ export interface PartnersContent {
 }
 
 export const DEFAULT_PARTNERS: PartnersContent = {
+  design: DEFAULT_DESIGN_SYSTEM,
   navItems: DEFAULT_NAV_ITEMS,
   headerCta: DEFAULT_HOME.headerCta,
   site: DEFAULT_HOME.site,
@@ -384,6 +458,7 @@ export async function loadHomeContent(): Promise<HomeContent> {
     }
 
     const { copyright, ...site } = siteFromDoc(settings);
+    content.design = designSystemFromDoc(settings?.design);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, v]) => v !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
 
@@ -497,6 +572,7 @@ export async function loadPartnersContent(): Promise<PartnersContent> {
       };
     }
     const { copyright, ...site } = siteFromDoc(settings);
+    content.design = designSystemFromDoc(settings?.design);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, value]) => value !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
     if (partners.length > 0) {

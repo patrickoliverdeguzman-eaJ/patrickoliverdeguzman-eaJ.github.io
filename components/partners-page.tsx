@@ -1,10 +1,10 @@
 'use client';
 
 import { ArrowRight, ArrowUpRight, Menu } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import SiteChatbot from '@/app/site-chatbot';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
-import { DEFAULT_PARTNERS, loadPartnersContent, type PartnersContent } from '@/lib/site-content';
+import { DEFAULT_PARTNERS, designVariables, loadPartnersContent, type PartnersContent } from '@/lib/site-content';
 
 const partnersHref =
   process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true' ? '/partners.html' : '/partners';
@@ -27,7 +27,7 @@ export function PartnersPage() {
     };
   }, []);
 
-  const { navItems, headerCta, site, footer, partners, clients, hero, directory, clientsHead } = content;
+  const { design, navItems, headerCta, site, footer, partners, clients, hero, directory, clientsHead } = content;
   const valuedClientRows = Array.from(
     { length: Math.ceil(clients.length / 4) },
     (_, rowIndex) => clients.slice(rowIndex * 4, rowIndex * 4 + 4),
@@ -35,7 +35,7 @@ export function PartnersPage() {
 
   return (
     <>
-    <main className="partner-page">
+    <main className="partner-page" style={designVariables(design) as CSSProperties}>
       <section className="partner-hero">
         <nav className="nav-wrap" aria-label="Main navigation">
           <a href="/" className="brand brand-image" aria-label="INFOStorage home">

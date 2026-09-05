@@ -1,12 +1,12 @@
 'use client';
 
 import { ArrowUpRight, Menu } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type CSSProperties, useEffect, useState } from 'react';
 import SiteChatbot from '@/app/site-chatbot';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
 import { CMS_API } from '@/lib/cms-api';
 import { normaliseBuilderPage, type BuilderPage } from '@/lib/page-builder';
-import { DEFAULT_HOME, loadHomeContent, type HomeContent } from '@/lib/site-content';
+import { DEFAULT_HOME, designVariables, loadHomeContent, type HomeContent } from '@/lib/site-content';
 
 type PublishedBuilderDocument = {
   title: string;
@@ -70,7 +70,7 @@ export function CustomBuilderPage() {
 
   return (
     <>
-      <main className="custom-builder-page">
+      <main className="custom-builder-page" style={designVariables(site.design) as CSSProperties}>
         <header className="custom-page-header">
           <nav className="nav-wrap" aria-label="Main navigation">
             <a href="/" className="brand brand-image" aria-label="INFOStorage home">
