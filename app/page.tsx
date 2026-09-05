@@ -10,6 +10,7 @@ import {
   Phone,
   ServerCog,
 } from 'lucide-react';
+import SiteChatbot from './site-chatbot';
 
 const solutions = [
   {
@@ -75,6 +76,7 @@ const partnersHref =
 
 export default function Home() {
   return (
+    <>
     <main className="site-shell">
       <section className="hero" id="top">
         <div className="hero-scanline" aria-hidden="true" />
@@ -309,5 +311,7 @@ export default function Home() {
         <span>© 2025 INFOStorage Corporation</span>
       </footer>
     </main>
+    <SiteChatbot />
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { ArrowRight, ArrowUpRight, Menu } from 'lucide-react';
+import SiteChatbot from '../site-chatbot';
 
 export const dynamic = 'force-static';
 
@@ -130,6 +131,7 @@ const partnersHref =
 
 export default function PartnersPage() {
   return (
+    <>
     <main className="partner-page">
       <section className="partner-hero">
         <nav className="nav-wrap" aria-label="Main navigation">
@@ -300,5 +302,7 @@ export default function PartnersPage() {
         <span>© 2025 INFOStorage Corporation</span>
       </footer>
     </main>
+    <SiteChatbot />
+    </>
   );
 }
