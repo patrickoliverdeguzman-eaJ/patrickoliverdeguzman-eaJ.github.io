@@ -84,7 +84,7 @@ type Draft = {
   note: string;
 };
 
-const endpointFromBuild = process.env.NEXT_PUBLIC_CMS_API_URL ?? '';
+const endpointFromBuild = process.env.NEXT_PUBLIC_CMS_API_URL ?? 'https://infostorage-cms.patrickoliverdeguzman.workers.dev';
 const endpointStorageKey = 'infostorage.cms.endpoint';
 const tokenStorageKey = 'infostorage.cms.session-token';
 
@@ -448,6 +448,10 @@ export default function CmsWorkspace() {
 
           {health?.migrationRequired && (
             <div className={styles.warningBox}><CircleAlert size={18} /> The API is online, but its database schema has not been applied yet.</div>
+          )}
+
+          {health?.ready && !health.setupConfigured && (
+            <div className={styles.warningBox}><ShieldCheck size={18} /> The CMS is deployed. Create its one-time setup token in Cloudflare before adding the first administrator.</div>
           )}
 
           {health?.ready && !health.initialized && (
