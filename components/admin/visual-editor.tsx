@@ -400,8 +400,9 @@ export function VisualEditor() {
     const types = new Set(pageLayers.map((layer) => layer.type));
     return documents.filter(
       (document) =>
-        types.has(document.type) ||
-        (document.type === 'builder_page' && document.slug === activePageSlug),
+        document.status !== 'archived' &&
+        (types.has(document.type) ||
+          (document.type === 'builder_page' && document.slug === activePageSlug)),
     );
   }, [activePageSlug, documents, pageLayers]);
 
