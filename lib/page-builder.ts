@@ -117,6 +117,45 @@ export function emptyBuilderPage(): BuilderPage {
   return { version: 1, slots: defaultSlots() };
 }
 
+function readableBriefTitle(brief: string): string {
+  const cleaned = brief
+    .replace(/^\s*(create|make|build|generate)\s+(an?\s+)?/i, '')
+    .replace(/\b(page|website|landing page)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.?!]+$/, '');
+  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1, 90) : 'A clear next step';
+}
+
+/** Produces an editable, design-system-matched page blueprint. It uses only
+ * the same structured blocks that the visual editor and public renderer use. */
+export function createPageFromBrief(brief: string): BuilderPage {
+  const page = emptyBuilderPage();
+  const title = readableBriefTitle(brief);
+  const hero = createBuilderNode('brand_hero');
+  hero.props = {
+    ...hero.props,
+    title,
+    accent: 'made practical.',
+    body: 'Use this editable starting point to explain the value, audience, and next step for this page.',
+  };
+  page.slots.afterHero = [hero];
+
+  const partnerFocused = /partner|ecosystem|alliance|vendor/i.test(brief);
+  const serviceFocused = /service|support|managed|consult/i.test(brief);
+  if (partnerFocused) {
+    page.slots.afterApproach = [createBuilderNode('partner_directory')];
+    page.slots.afterSolutions = [createBuilderNode('logo_grid')];
+    page.slots.afterServices = [createBuilderNode('method_list')];
+  } else {
+    page.slots.afterApproach = [createBuilderNode('split_intro'), createBuilderNode('principle_grid')];
+    page.slots.afterSolutions = [createBuilderNode('solution_grid')];
+    page.slots.afterServices = [serviceFocused ? createBuilderNode('service_list') : createBuilderNode('tag_band')];
+  }
+  page.slots.afterContent = [createBuilderNode('contact_panel')];
+  return page;
+}
+
 export function createBuilderNode(type: BuilderNodeType): BuilderNode {
   const node: BuilderNode = {
     id: id(),

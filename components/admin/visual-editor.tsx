@@ -32,6 +32,7 @@ import {
   BUILDER_NODE_TYPES,
   BUILDER_SLOTS,
   cloneBuilderNode,
+  createPageFromBrief,
   type BuilderNode,
   type BuilderNodeType,
   createBuilderNode,
@@ -435,6 +436,7 @@ export function VisualEditor() {
   const [addingPage, setAddingPage] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageSlug, setNewPageSlug] = useState('');
+  const [newPageBrief, setNewPageBrief] = useState('');
   const [copiedBuilderNode, setCopiedBuilderNode] = useState<BuilderNode | null>(null);
 
   const load = useCallback(async () => {
@@ -608,8 +610,8 @@ export function VisualEditor() {
           type: 'builder_page',
           slug,
           title,
-          data: emptyBuilderPage(),
-          note: 'Created as a new visual-builder page',
+          data: newPageBrief.trim() ? createPageFromBrief(newPageBrief) : emptyBuilderPage(),
+          note: newPageBrief.trim() ? 'Created from an editable page brief' : 'Created as a new visual-builder page',
         }),
       });
       const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
@@ -622,8 +624,9 @@ export function VisualEditor() {
       setAddingPage(false);
       setNewPageTitle('');
       setNewPageSlug('');
+      setNewPageBrief('');
       setStatus('saved');
-      setMessage('New page draft is ready. Add blocks, then publish it.');
+      setMessage(newPageBrief.trim() ? 'Editable page starter is ready. Refine the blocks, then publish it.' : 'New page draft is ready. Add blocks, then publish it.');
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'The page draft could not be created.');
@@ -1244,8 +1247,17 @@ export function VisualEditor() {
               onChange={(event) => setNewPageSlug(slugFromTitle(event.target.value))}
             />
           </label>
+          <label>
+            Page brief (optional)
+            <textarea
+              value={newPageBrief}
+              placeholder="For example: Create a modern managed services page matching the INFOStorage site."
+              onChange={(event) => setNewPageBrief(event.target.value)}
+            />
+            <small>Creates a design-matched, fully editable starter using the CMS block library.</small>
+          </label>
           <button className="admin-btn admin-btn-primary" type="button" onClick={() => void createPage()}>
-            Create draft
+            {newPageBrief.trim() ? 'Create editable starter' : 'Create blank draft'}
           </button>
           <button className="admin-btn admin-btn-ghost" type="button" onClick={() => setAddingPage(false)}>
             Cancel
