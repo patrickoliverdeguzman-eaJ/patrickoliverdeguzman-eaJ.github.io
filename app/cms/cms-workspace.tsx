@@ -454,7 +454,7 @@ export default function CmsWorkspace() {
             <div className={styles.warningBox}><ShieldCheck size={18} /> The CMS is deployed. Create its one-time setup token in Cloudflare before adding the first administrator.</div>
           )}
 
-          {health?.ready && !health.initialized && (
+          {health?.ready && health.setupConfigured && !health.initialized && (
             <BootstrapForm api={api} onAuthenticated={(result) => {
               sessionStorage.setItem(tokenStorageKey, result.token);
               setToken(result.token);
