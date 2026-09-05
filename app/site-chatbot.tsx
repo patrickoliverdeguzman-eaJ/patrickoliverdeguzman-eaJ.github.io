@@ -25,7 +25,7 @@ type VisitorSession = {
   token: string;
 };
 
-const endpoint = process.env.NEXT_PUBLIC_CMS_API_URL ?? 'https://infostorage-cms.patrickoliverdeguzman.workers.dev';
+const endpoint = (process.env.NEXT_PUBLIC_CMS_API_URL ?? 'https://infostorage-cms.patrickoliverdeguzman.workers.dev').trim().replace(/\/+$/, '');
 const visitorStorageKey = 'infostorage.chat.visitor-session';
 
 function formatError(error: unknown): string {

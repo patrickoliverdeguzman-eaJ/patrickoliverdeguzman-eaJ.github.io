@@ -19,6 +19,7 @@ type DocumentRow = {
   slug: string;
   title: string;
   status: DocumentStatus;
+  sort_order: number;
   data_json: string;
   published_data_json: string | null;
   current_revision: number;
@@ -80,6 +81,14 @@ const MAX_CHAT_CONVERSATIONS = 100;
 const SESSION_DAYS = 12;
 // Cloudflare Workers currently supports at most 100,000 PBKDF2 iterations.
 const PASSWORD_ITERATIONS = 100_000;
+const ALLOWED_MEDIA_EXTENSIONS: Record<string, readonly string[]> = {
+  'image/jpeg': ['jpg', 'jpeg'],
+  'image/png': ['png'],
+  'image/webp': ['webp'],
+  'image/avif': ['avif'],
+  'image/gif': ['gif'],
+  'application/pdf': ['pdf'],
+};
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const encoder = new TextEncoder();
 
@@ -375,6 +384,106 @@ function requireRole(user: CmsUser, ...roles: Role[]): void {
   }
 }
 
+type AuditEntry = {
+  userId: string | null;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  detail?: string;
+};
+
+async function logAudit(env: CmsEnv, entry: AuditEntry): Promise<void> {
+  try {
+    await env.CMS_DB.prepare(
+      `INSERT INTO cms_audit_log (id, user_id, action, resource_type, resource_id, detail, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        entry.userId,
+        entry.action,
+        entry.resourceType,
+        entry.resourceId ?? null,
+        entry.detail ?? '',
+        now(),
+      )
+      .run();
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'CMS audit log write failed',
+      action: entry.action,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
+async function listAudit(request: Request, env: CmsEnv): Promise<Response> {
+  const url = new URL(request.url);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? '50'), 1), 100);
+  const result = await env.CMS_DB.prepare(
+    `SELECT a.id, a.user_id, a.action, a.resource_type, a.resource_id, a.detail, a.created_at,
+       u.email AS user_email, u.display_name AS user_name
+     FROM cms_audit_log a LEFT JOIN cms_users u ON u.id = a.user_id
+     ORDER BY a.created_at DESC LIMIT ?`,
+  )
+    .bind(limit)
+    .all<{
+      id: string;
+      user_id: string | null;
+      action: string;
+      resource_type: string;
+      resource_id: string | null;
+      detail: string;
+      created_at: string;
+      user_email: string | null;
+      user_name: string | null;
+    }>();
+  return json({
+    audit: result.results.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      userEmail: row.user_email,
+      userName: row.user_name,
+      action: row.action,
+      resourceType: row.resource_type,
+      resourceId: row.resource_id,
+      detail: row.detail,
+      createdAt: row.created_at,
+    })),
+  });
+}
+
+// Best-effort per-isolate throttle for sign-in attempts. Workers isolates do
+// not share memory, so harden production further with a KV or D1 counter.
+const loginFailures = new Map<string, number[]>();
+
+function loginThrottleKey(request: Request, email: string): string {
+  const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+  const ip = request.headers.get('cf-connecting-ip') ?? (forwarded || 'unknown');
+  return `${ip}:${email}`;
+}
+
+function checkLoginThrottle(request: Request, email: string): void {
+  const key = loginThrottleKey(request, email);
+  const windowStart = Date.now() - 5 * 60 * 1000;
+  const attempts = (loginFailures.get(key) ?? []).filter((timestamp) => timestamp > windowStart);
+  loginFailures.set(key, attempts);
+  if (attempts.length >= 5) {
+    throw new HttpError(429, 'Too many sign-in attempts. Try again in a few minutes.', 'rate_limited');
+  }
+}
+
+function recordLoginFailure(request: Request, email: string): void {
+  const key = loginThrottleKey(request, email);
+  const attempts = loginFailures.get(key) ?? [];
+  attempts.push(Date.now());
+  loginFailures.set(key, attempts.slice(-10));
+}
+
+function clearLoginFailures(request: Request, email: string): void {
+  loginFailures.delete(loginThrottleKey(request, email));
+}
+
 function formatUser(user: CmsUser): JsonRecord {
   return { id: user.id, email: user.email, displayName: user.display_name, role: user.role };
 }
@@ -517,6 +626,7 @@ async function login(request: Request, env: CmsEnv): Promise<Response> {
   const body = await readJson(request);
   const email = validateEmail(body.email);
   const password = validatePassword(body.password);
+  checkLoginThrottle(request, email);
   const account = await env.CMS_DB.prepare(
     `SELECT id, email, display_name, role, password_salt, password_hash
      FROM cms_users WHERE email = ?`,
@@ -525,11 +635,15 @@ async function login(request: Request, env: CmsEnv): Promise<Response> {
     .first<CmsUser & { password_salt: string; password_hash: string }>();
 
   if (!account || !(await verifyPassword(password, account.password_salt, account.password_hash))) {
+    recordLoginFailure(request, email);
     throw new HttpError(401, 'Email or password is not correct.', 'invalid_credentials');
   }
 
   const user: CmsUser = account;
-  return json(await createSession(user, env));
+  clearLoginFailures(request, email);
+  const session = await createSession(user, env);
+  await logAudit(env, { userId: user.id, action: 'login', resourceType: 'user', resourceId: user.id, detail: user.email });
+  return json(session);
 }
 
 async function listDocuments(request: Request, env: CmsEnv): Promise<Response> {
@@ -559,8 +673,8 @@ async function listDocuments(request: Request, env: CmsEnv): Promise<Response> {
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const result = await env.CMS_DB.prepare(
     `SELECT id, type, slug, title, status, data_json, published_data_json,
-      current_revision, published_revision, created_at, updated_at, published_at
-     FROM cms_documents ${where} ORDER BY updated_at DESC LIMIT ?`,
+      current_revision, published_revision, sort_order, created_at, updated_at, published_at
+     FROM cms_documents ${where} ORDER BY sort_order ASC, updated_at DESC LIMIT ?`,
   )
     .bind(...values)
     .all<DocumentRow>();
@@ -576,15 +690,19 @@ async function createDocument(request: Request, user: CmsUser, env: CmsEnv): Pro
   const note = asOptionalString(body.note, 240);
   const id = crypto.randomUUID();
   const createdAt = now();
+  const orderRow = await env.CMS_DB.prepare(
+    'SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM cms_documents',
+  ).first<{ next_order: number }>();
+  const sortOrder = Number(orderRow?.next_order ?? 0);
 
   try {
     await env.CMS_DB.batch([
       env.CMS_DB.prepare(
         `INSERT INTO cms_documents (
-          id, type, slug, title, status, data_json, current_revision,
+          id, type, slug, title, status, data_json, current_revision, sort_order,
           created_by, updated_by, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'draft', ?, 1, ?, ?, ?, ?)`,
-      ).bind(id, type, slug, title, data.serialized, user.id, user.id, createdAt, createdAt),
+        ) VALUES (?, ?, ?, ?, 'draft', ?, 1, ?, ?, ?, ?, ?)`,
+      ).bind(id, type, slug, title, data.serialized, sortOrder, user.id, user.id, createdAt, createdAt),
       env.CMS_DB.prepare(
         `INSERT INTO cms_document_revisions (
           id, document_id, revision_number, title, slug, data_json, note, created_by, created_at
@@ -596,7 +714,9 @@ async function createDocument(request: Request, user: CmsUser, env: CmsEnv): Pro
     throw error;
   }
 
-  return json({ document: formatDocument(await getDocument(id, env)) }, { status: 201 });
+  const created = await getDocument(id, env);
+  await logAudit(env, { userId: user.id, action: 'document.create', resourceType: 'document', resourceId: id, detail: `${type}/${slug}` });
+  return json({ document: formatDocument(created) }, { status: 201 });
 }
 
 async function updateDocument(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
@@ -631,6 +751,7 @@ async function updateDocument(id: string, request: Request, user: CmsUser, env: 
     throw error;
   }
 
+  await logAudit(env, { userId: user.id, action: 'document.update', resourceType: 'document', resourceId: id, detail: `${title} (${slug})` });
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
 
@@ -648,7 +769,8 @@ async function publishDocument(id: string, user: CmsUser, env: CmsEnv): Promise<
      WHERE id = ?`,
   )
     .bind(user.id, publishedAt, publishedAt, id)
-    .run();
+      .run();
+  await logAudit(env, { userId: user.id, action: 'document.publish', resourceType: 'document', resourceId: id, detail: document.title });
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
 
@@ -662,7 +784,8 @@ async function unpublishDocument(id: string, user: CmsUser, env: CmsEnv): Promis
      WHERE id = ?`,
   )
     .bind(user.id, updatedAt, id)
-    .run();
+      .run();
+  await logAudit(env, { userId: user.id, action: 'document.unpublish', resourceType: 'document', resourceId: id });
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
 
@@ -676,7 +799,8 @@ async function archiveDocument(id: string, user: CmsUser, env: CmsEnv): Promise<
      WHERE id = ?`,
   )
     .bind(user.id, updatedAt, id)
-    .run();
+      .run();
+  await logAudit(env, { userId: user.id, action: 'document.archive', resourceType: 'document', resourceId: id });
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
 
@@ -740,7 +864,50 @@ async function restoreRevision(
     throw error;
   }
 
+  await logAudit(env, { userId: user.id, action: 'document.restore', resourceType: 'document', resourceId: id, detail: `Restored revision ${revisionNumber}` });
   return json({ document: formatDocument(await getDocument(id, env)) });
+}
+
+async function reorderDocuments(request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const body = await readJson(request);
+  const rawIds: unknown = body.ids;
+  if (!Array.isArray(rawIds) || rawIds.length === 0 || rawIds.length > 100) {
+    throw new HttpError(400, 'Provide 1 to 100 document ids in order.', 'invalid_input');
+  }
+  const ids = rawIds.map((id) => (typeof id === 'string' ? id : ''));
+  if (ids.some((id) => !id)) throw new HttpError(400, 'Document ids must be text.', 'invalid_input');
+  const placeholders = ids.map(() => '?').join(', ');
+  const existing = await env.CMS_DB.prepare(
+    `SELECT id FROM cms_documents WHERE id IN (${placeholders})`,
+  ).bind(...ids).all<{ id: string }>();
+  if (existing.results.length !== ids.length) {
+    throw new HttpError(404, 'One or more documents were not found.', 'not_found');
+  }
+  const updatedAt = now();
+  await env.CMS_DB.batch(
+    ids.map((id, index) =>
+      env.CMS_DB.prepare('UPDATE cms_documents SET sort_order = ?, updated_at = ? WHERE id = ?').bind(index, updatedAt, id),
+    ),
+  );
+  await logAudit(env, { userId: user.id, action: 'document.reorder', resourceType: 'document', detail: `${ids.length} documents reordered` });
+  return json({ reordered: ids.length });
+}
+
+async function deleteUser(id: string, user: CmsUser, env: CmsEnv): Promise<Response> {
+  if (id === user.id) throw new HttpError(400, 'You cannot delete your own account.', 'invalid_input');
+  const target = await env.CMS_DB.prepare(
+    'SELECT id, email, display_name, role FROM cms_users WHERE id = ?',
+  ).bind(id).first<CmsUser>();
+  if (!target) throw new HttpError(404, 'User was not found.', 'not_found');
+  const owned = await env.CMS_DB.prepare(
+    'SELECT COUNT(*) AS total FROM cms_documents WHERE created_by = ? OR updated_by = ?',
+  ).bind(id, id).first<{ total: number }>();
+  if (Number(owned?.total ?? 0) > 0) {
+    throw new HttpError(409, 'Reassign or remove the content owned by this user before deleting them.', 'has_content');
+  }
+  await env.CMS_DB.prepare('DELETE FROM cms_users WHERE id = ?').bind(id).run();
+  await logAudit(env, { userId: user.id, action: 'user.delete', resourceType: 'user', resourceId: id, detail: target.email });
+  return json({ deleted: true });
 }
 
 async function getChatConversation(id: string, env: CmsEnv): Promise<ChatConversationRow> {
@@ -915,7 +1082,7 @@ async function listUsers(env: CmsEnv): Promise<Response> {
   return json({ users: result.results.map(formatUser) });
 }
 
-async function createUser(request: Request, env: CmsEnv): Promise<Response> {
+async function createUser(request: Request, actor: CmsUser, env: CmsEnv): Promise<Response> {
   const body = await readJson(request);
   const email = validateEmail(body.email);
   const displayName = asString(body.displayName, 'Display name', 80);
@@ -936,6 +1103,7 @@ async function createUser(request: Request, env: CmsEnv): Promise<Response> {
     throw error;
   }
 
+  await logAudit(env, { userId: actor.id, action: 'user.create', resourceType: 'user', resourceId: user.id, detail: email });
   return json({ user: formatUser(user) }, { status: 201 });
 }
 
@@ -955,13 +1123,23 @@ function sanitizeFilename(value: string): string {
   return cleaned;
 }
 
+function validateMediaFile(filename: string, mimeType: string): void {
+  const extension = filename.includes('.') ? filename.split('.').pop()?.toLowerCase() : undefined;
+  const permittedExtensions = ALLOWED_MEDIA_EXTENSIONS[mimeType];
+  if (!extension || !permittedExtensions?.includes(extension)) {
+    throw new HttpError(
+      415,
+      'Use a JPEG, PNG, WebP, AVIF, GIF, or PDF file with a matching file extension.',
+      'unsupported_media_type',
+    );
+  }
+}
+
 async function uploadMedia(request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
   const filename = sanitizeFilename(asString(request.headers.get('x-file-name'), 'File name', 160));
   const altText = asOptionalString(request.headers.get('x-alt-text') ?? '', 240) ?? '';
   const mimeType = request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ?? '';
-  if (!/^(image\/|video\/|application\/pdf$)/.test(mimeType)) {
-    throw new HttpError(415, 'Use an image, video, or PDF file.', 'unsupported_media_type');
-  }
+  validateMediaFile(filename, mimeType);
 
   const contentLength = Number(request.headers.get('content-length') ?? '');
   if (!Number.isFinite(contentLength) || contentLength <= 0) {
@@ -999,6 +1177,7 @@ async function uploadMedia(request: Request, user: CmsUser, env: CmsEnv): Promis
     .bind(id)
     .first<MediaRow>();
   if (!media) throw new HttpError(500, 'Media metadata could not be stored.', 'storage_error');
+  await logAudit(env, { userId: user.id, action: 'media.upload', resourceType: 'media', resourceId: id, detail: filename });
   return json({ media: formatMedia(media, request) }, { status: 201 });
 }
 
@@ -1022,7 +1201,7 @@ async function serveMedia(id: string, env: CmsEnv): Promise<Response> {
   return new Response(object.body, { headers });
 }
 
-async function deleteMedia(id: string, env: CmsEnv): Promise<Response> {
+async function deleteMedia(id: string, user: CmsUser, env: CmsEnv): Promise<Response> {
   const media = await env.CMS_DB.prepare(
     `SELECT id, object_key, filename, alt_text, mime_type, byte_size, created_at
      FROM cms_media WHERE id = ?`,
@@ -1032,6 +1211,7 @@ async function deleteMedia(id: string, env: CmsEnv): Promise<Response> {
   if (!media) throw new HttpError(404, 'Media was not found.', 'not_found');
   await env.CMS_MEDIA.delete(media.object_key);
   await env.CMS_DB.prepare('DELETE FROM cms_media WHERE id = ?').bind(id).run();
+  await logAudit(env, { userId: user.id, action: 'media.delete', resourceType: 'media', resourceId: id, detail: media.filename });
   return json({ deleted: true });
 }
 
@@ -1044,14 +1224,14 @@ async function publicContent(parts: string[], request: Request, env: CmsEnv): Pr
     }
     const statement = type
       ? env.CMS_DB.prepare(
-        `SELECT id, type, slug, title, published_data_json, published_revision, published_at
-         FROM cms_documents WHERE status = 'published' AND type = ? ORDER BY published_at DESC`,
+        `SELECT id, type, slug, title, published_data_json, published_revision, sort_order, published_at
+         FROM cms_documents WHERE status = 'published' AND type = ? ORDER BY sort_order ASC, published_at DESC`,
       ).bind(type)
       : env.CMS_DB.prepare(
-        `SELECT id, type, slug, title, published_data_json, published_revision, published_at
-         FROM cms_documents WHERE status = 'published' ORDER BY published_at DESC`,
+        `SELECT id, type, slug, title, published_data_json, published_revision, sort_order, published_at
+         FROM cms_documents WHERE status = 'published' ORDER BY sort_order ASC, published_at DESC`,
       );
-    const result = await statement.all<Pick<DocumentRow, 'id' | 'type' | 'slug' | 'title' | 'published_data_json' | 'published_revision' | 'published_at'>>();
+    const result = await statement.all<Pick<DocumentRow, 'id' | 'type' | 'slug' | 'title' | 'published_data_json' | 'published_revision' | 'sort_order' | 'published_at'>>();
     return json({
       documents: result.results.map((document) => ({
         id: document.id,
@@ -1060,6 +1240,7 @@ async function publicContent(parts: string[], request: Request, env: CmsEnv): Pr
         title: document.title,
         data: document.published_data_json ? parseStoredData(document.published_data_json) : {},
         revision: document.published_revision,
+        order: document.sort_order,
         publishedAt: document.published_at,
       })),
     });
@@ -1069,11 +1250,11 @@ async function publicContent(parts: string[], request: Request, env: CmsEnv): Pr
   const type = validateType(decodeURIComponent(parts[1]));
   const slug = validateSlug(decodeURIComponent(parts[2]));
   const document = await env.CMS_DB.prepare(
-    `SELECT id, type, slug, title, published_data_json, published_revision, published_at
+    `SELECT id, type, slug, title, published_data_json, published_revision, sort_order, published_at
      FROM cms_documents WHERE status = 'published' AND type = ? AND slug = ?`,
   )
     .bind(type, slug)
-    .first<Pick<DocumentRow, 'id' | 'type' | 'slug' | 'title' | 'published_data_json' | 'published_revision' | 'published_at'>>();
+    .first<Pick<DocumentRow, 'id' | 'type' | 'slug' | 'title' | 'published_data_json' | 'published_revision' | 'sort_order' | 'published_at'>>();
   if (!document || !document.published_data_json) throw new HttpError(404, 'Published content was not found.', 'not_found');
   return json({
     document: {
@@ -1083,6 +1264,7 @@ async function publicContent(parts: string[], request: Request, env: CmsEnv): Pr
       title: document.title,
       data: parseStoredData(document.published_data_json),
       revision: document.published_revision,
+      order: document.sort_order,
       publishedAt: document.published_at,
     },
   });
@@ -1130,8 +1312,14 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
 
   if (adminRoute[0] === 'users') {
     requireRole(user, 'admin');
-    if (request.method === 'GET') return listUsers(env);
-    if (request.method === 'POST') return createUser(request, env);
+    if (request.method === 'GET' && adminRoute.length === 1) return listUsers(env);
+    if (request.method === 'POST' && adminRoute.length === 1) return createUser(request, user, env);
+    if (request.method === 'DELETE' && adminRoute.length === 2) return deleteUser(decodeURIComponent(adminRoute[1]), user, env);
+  }
+
+  if (adminRoute[0] === 'audit' && request.method === 'GET') {
+    requireRole(user, 'admin');
+    return listAudit(request, env);
   }
 
   if (adminRoute[0] === 'conversations') {
@@ -1148,6 +1336,10 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
   if (adminRoute[0] === 'documents') {
     if (adminRoute.length === 1 && request.method === 'GET') return listDocuments(request, env);
     const documentId = adminRoute[1] ? decodeURIComponent(adminRoute[1]) : '';
+    if (documentId === 'reorder' && adminRoute.length === 2 && request.method === 'PATCH') {
+      requireRole(user, 'admin', 'editor');
+      return reorderDocuments(request, user, env);
+    }
     if (adminRoute.length === 2 && request.method === 'GET') {
       if (!documentId) throw new HttpError(404, 'Route was not found.', 'not_found');
       return json({ document: formatDocument(await getDocument(documentId, env)) });
@@ -1176,7 +1368,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     if (request.method === 'GET' && adminRoute.length === 1) return listMedia(request, env);
     requireRole(user, 'admin', 'editor');
     if (request.method === 'POST' && adminRoute.length === 1) return uploadMedia(request, user, env);
-    if (request.method === 'DELETE' && adminRoute.length === 2) return deleteMedia(decodeURIComponent(adminRoute[1]), env);
+    if (request.method === 'DELETE' && adminRoute.length === 2) return deleteMedia(decodeURIComponent(adminRoute[1]), user, env);
   }
 
   throw new HttpError(404, 'Route was not found.', 'not_found');

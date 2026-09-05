@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import SiteMetadata from './site-metadata';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://infostorage-enterprise.yasuoxd-yx.chatgpt.site'),
@@ -22,7 +23,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SiteMetadata />
+        {children}
+      </body>
     </html>
   );
 }
