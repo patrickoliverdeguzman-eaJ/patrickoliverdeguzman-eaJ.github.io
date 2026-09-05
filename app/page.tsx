@@ -40,7 +40,7 @@ export default function Home() {
     };
   }, []);
 
-  const { navItems, hero, approach, solutionsHeading, solutions, continuity, servicesHead, services, sectors, contact, site, footer } = content;
+  const { navItems, headerCta, hero, approach, solutionsHeading, solutions, continuity, servicesHead, services, sectors, contact, site, footer } = content;
 
   return (
     <>
@@ -61,8 +61,8 @@ export default function Home() {
             ))}
           </div>
 
-          <a className="nav-cta" href="#contact">
-            Start a conversation <ArrowUpRight size={16} strokeWidth={2.1} />
+          <a className="nav-cta" href={headerCta.href}>
+            {headerCta.label} <ArrowUpRight size={16} strokeWidth={2.1} />
           </a>
 
           <details className="mobile-menu">

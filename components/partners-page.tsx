@@ -27,7 +27,7 @@ export function PartnersPage() {
     };
   }, []);
 
-  const { navItems, site, footer, partners, clients, hero, directory, clientsHead } = content;
+  const { navItems, headerCta, site, footer, partners, clients, hero, directory, clientsHead } = content;
   const valuedClientRows = Array.from(
     { length: Math.ceil(clients.length / 4) },
     (_, rowIndex) => clients.slice(rowIndex * 4, rowIndex * 4 + 4),
@@ -52,8 +52,8 @@ export function PartnersPage() {
             ))}
           </div>
 
-          <a className="nav-cta" href="/#contact">
-            Start a conversation <ArrowUpRight size={16} strokeWidth={2.1} />
+          <a className="nav-cta" href={headerCta.href === '#contact' ? '/#contact' : headerCta.href}>
+            {headerCta.label} <ArrowUpRight size={16} strokeWidth={2.1} />
           </a>
 
           <details className="mobile-menu">

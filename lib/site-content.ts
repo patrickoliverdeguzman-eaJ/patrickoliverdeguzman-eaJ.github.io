@@ -183,6 +183,7 @@ export const DEFAULT_CLIENT_LIST: ClientContent[] = [
 
 export interface HomeContent {
   navItems: NavItem[];
+  headerCta: { label: string; href: string };
   hero: {
     eyebrow: string;
     titleA: string;
@@ -217,6 +218,7 @@ export interface HomeContent {
 
 export const DEFAULT_HOME: HomeContent = {
   navItems: DEFAULT_NAV_ITEMS,
+  headerCta: { label: 'Start a conversation', href: '#contact' },
   hero: {
     eyebrow: 'Premium solutions integrator',
     titleA: 'Enterprise-class solutions for',
@@ -285,6 +287,7 @@ export const DEFAULT_HOME: HomeContent = {
 
 export interface PartnersContent {
   navItems: NavItem[];
+  headerCta: HomeContent['headerCta'];
   site: HomeContent['site'];
   footer: HomeContent['footer'];
   partners: PartnerContent[];
@@ -298,6 +301,7 @@ export interface PartnersContent {
 
 export const DEFAULT_PARTNERS: PartnersContent = {
   navItems: DEFAULT_NAV_ITEMS,
+  headerCta: DEFAULT_HOME.headerCta,
   site: DEFAULT_HOME.site,
   footer: DEFAULT_HOME.footer,
   partners: DEFAULT_PARTNER_LIST,
@@ -372,6 +376,12 @@ export async function loadHomeContent(): Promise<HomeContent> {
 
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
+    if (nav) {
+      content.headerCta = {
+        label: str(nav.ctaLabel, content.headerCta.label),
+        href: str(nav.ctaHref, content.headerCta.href),
+      };
+    }
 
     const { copyright, ...site } = siteFromDoc(settings);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, v]) => v !== undefined)) };
@@ -480,6 +490,12 @@ export async function loadPartnersContent(): Promise<PartnersContent> {
     if (builder) content.builder = normaliseBuilderPage(builder);
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
+    if (nav) {
+      content.headerCta = {
+        label: str(nav.ctaLabel, content.headerCta.label),
+        href: str(nav.ctaHref, content.headerCta.href),
+      };
+    }
     const { copyright, ...site } = siteFromDoc(settings);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, value]) => value !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };

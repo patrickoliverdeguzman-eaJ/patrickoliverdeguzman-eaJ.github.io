@@ -70,6 +70,7 @@ type MediaAsset = {
 type PageKey = 'home' | 'partners';
 type Device = 'desktop' | 'tablet' | 'mobile';
 type FieldRef = { documentId: string; key: string };
+type HeaderLink = { id: string; label: string; href: string; enabled: boolean };
 
 type Layer = {
   id: string;
@@ -94,7 +95,6 @@ const PAGE_LAYERS: Record<PageKey, Layer[]> = {
       label: 'Navigation',
       type: 'navigation',
       slug: 'main',
-      locked: true,
     },
     { id: 'hero', label: 'Hero', type: 'home_section', slug: 'hero' },
     {
@@ -154,7 +154,6 @@ const PAGE_LAYERS: Record<PageKey, Layer[]> = {
       label: 'Navigation',
       type: 'navigation',
       slug: 'main',
-      locked: true,
     },
     {
       id: 'partners-hero',
@@ -223,6 +222,32 @@ function nextSlug(value: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'content';
   return `${root}-${Date.now().toString(36)}`.slice(0, 120);
+}
+
+function slugFromTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+}
+
+function customPageHref(slug: string): string {
+  const base = process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true' ? '/custom.html' : '/custom';
+  return `${base}?page=${encodeURIComponent(slug)}`;
+}
+
+function headerLinks(value: unknown): HeaderLink[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+    .map((item, index) => ({
+      id: typeof item.id === 'string' && item.id ? item.id : `header-link-${index}`,
+      label: typeof item.label === 'string' ? item.label : '',
+      href: typeof item.href === 'string' ? item.href : '#',
+      enabled: item.enabled !== false,
+    }));
 }
 
 function findDocument(
@@ -300,6 +325,10 @@ export function VisualEditor() {
   const [activeBuilderSlot, setActiveBuilderSlot] = useState(BUILDER_SLOTS[0].id);
   const [selectedBuilderNodeId, setSelectedBuilderNodeId] = useState<string | null>(null);
   const [draggedBuilderNodeId, setDraggedBuilderNodeId] = useState<string | null>(null);
+  const [activeCustomPageId, setActiveCustomPageId] = useState<string | null>(null);
+  const [addingPage, setAddingPage] = useState(false);
+  const [newPageTitle, setNewPageTitle] = useState('');
+  const [newPageSlug, setNewPageSlug] = useState('');
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -342,11 +371,28 @@ export function VisualEditor() {
     void load();
   }, [load]);
 
-  const pageLayers = PAGE_LAYERS[page];
-  const builderDocument = findDocument(documents, 'builder_page', page);
+  const customPages = documents.filter(
+    (document) =>
+      document.type === 'builder_page' &&
+      document.slug !== 'home' &&
+      document.slug !== 'partners',
+  );
+  const activeCustomPage = customPages.find(
+    (document) => document.id === activeCustomPageId,
+  );
+  const isCustomPage = Boolean(activeCustomPage);
+  const activePageSlug = activeCustomPage?.slug ?? page;
+  const pageLayers = isCustomPage ? [] : PAGE_LAYERS[page];
+  const builderDocument = findDocument(
+    documents,
+    'builder_page',
+    activePageSlug,
+  );
   const builderPage = builderDocument ? normaliseBuilderPage(builderDocument.data) : emptyBuilderPage();
   const hasPageBindings =
-    page === 'home'
+    isCustomPage
+      ? true
+      : page === 'home'
       ? Boolean(findDocument(documents, 'home_section', 'hero'))
       : Boolean(findDocument(documents, 'page_section', 'partners-hero'));
   const pageDocuments = useMemo(() => {
@@ -354,9 +400,9 @@ export function VisualEditor() {
     return documents.filter(
       (document) =>
         types.has(document.type) ||
-        (document.type === 'builder_page' && document.slug === page),
+        (document.type === 'builder_page' && document.slug === activePageSlug),
     );
-  }, [documents, page, pageLayers]);
+  }, [activePageSlug, documents, pageLayers]);
 
   const markChanged = (nextDocuments: CmsDocument[], ids: string[]) => {
     setHistory((items) => [...items, structuredClone(documents)].slice(-30));
@@ -374,6 +420,15 @@ export function VisualEditor() {
       return { ...document, data: { ...document.data, [field.key]: value } };
     });
     markChanged(next, [field.documentId]);
+  };
+
+  const updateHeaderLinks = (documentId: string, links: HeaderLink[]) => {
+    const next = documents.map((document) =>
+      document.id === documentId
+        ? { ...document, data: { ...document.data, items: links } }
+        : document,
+    );
+    markChanged(next, [documentId]);
   };
 
   const updateBuilder = (nextPage: ReturnType<typeof emptyBuilderPage>) => {
@@ -395,8 +450,8 @@ export function VisualEditor() {
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({
           type: 'builder_page',
-          slug: page,
-          title: `${page === 'home' ? 'Home' : 'Partners'} custom blocks`,
+          slug: activePageSlug,
+          title: activeCustomPage?.title ?? `${page === 'home' ? 'Home' : 'Partners'} custom blocks`,
           data: emptyBuilderPage(),
           note: 'Created structured visual-builder canvas',
         }),
@@ -408,6 +463,52 @@ export function VisualEditor() {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'The builder canvas could not be created.');
       return null;
+    }
+  };
+
+  const createPage = async () => {
+    const title = newPageTitle.trim();
+    const slug = slugFromTitle(newPageSlug || title);
+    if (!title || !slug) {
+      setStatus('error');
+      setMessage('Give the new page a title and a valid URL name.');
+      return;
+    }
+    if (documents.some((document) => document.type === 'builder_page' && document.slug === slug)) {
+      setStatus('error');
+      setMessage('That page URL is already in use. Choose another URL name.');
+      return;
+    }
+    setStatus('saving');
+    setMessage('Creating page draft…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          type: 'builder_page',
+          slug,
+          title,
+          data: emptyBuilderPage(),
+          note: 'Created as a new visual-builder page',
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+      if (!response.ok || !result.document) throw new Error(result.error ?? 'The page draft could not be created.');
+      setDocuments((current) => [...current, result.document!]);
+      setActiveCustomPageId(result.document.id);
+      setSelected(null);
+      setSelectedBuilderNodeId(null);
+      setActiveBuilderSlot(BUILDER_SLOTS[0].id);
+      setAddingPage(false);
+      setNewPageTitle('');
+      setNewPageSlug('');
+      setStatus('saved');
+      setMessage('New page draft is ready. Add blocks, then publish it.');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The page draft could not be created.');
     }
   };
 
@@ -823,13 +924,21 @@ export function VisualEditor() {
   const selectedBuilderNode = selectedBuilderNodeId
     ? findBuilderNode(builderPage, selectedBuilderNodeId)
     : undefined;
+  const selectedHeaderLinks =
+    selectedDocument?.type === 'navigation'
+      ? headerLinks(selectedDocument.data.items)
+      : [];
   const selectedFields = selectedDocument
     ? [
         { key: '__title', value: selectedDocument.title },
         ...Object.entries(selectedDocument.data)
           .filter(
-            ([, value]) =>
-              typeof value === 'string' || typeof value === 'boolean',
+            ([key, value]) =>
+              (typeof value === 'string' || typeof value === 'boolean') &&
+              !(
+                selectedDocument.type === 'navigation' &&
+                ['ctaLabel', 'ctaHref'].includes(key)
+              ),
           )
           .map(([key, value]) => ({ key, value: value as string | boolean })),
       ]
@@ -864,9 +973,10 @@ export function VisualEditor() {
             <button
               key={key}
               type="button"
-              className={page === key ? 'active' : ''}
+              className={!isCustomPage && page === key ? 'active' : ''}
               onClick={() => {
                 setPage(key);
+                setActiveCustomPageId(null);
                 setSelected(null);
                 setSelectedBuilderNodeId(null);
                 setActiveBuilderSlot(BUILDER_SLOTS[0].id);
@@ -875,6 +985,29 @@ export function VisualEditor() {
               {key === 'home' ? 'Home' : 'Partners'}
             </button>
           ))}
+          {customPages.map((customPage) => (
+            <button
+              key={customPage.id}
+              type="button"
+              className={activeCustomPageId === customPage.id ? 'active' : ''}
+              title={customPage.slug}
+              onClick={() => {
+                setActiveCustomPageId(customPage.id);
+                setSelected(null);
+                setSelectedBuilderNodeId(null);
+                setActiveBuilderSlot(BUILDER_SLOTS[0].id);
+              }}
+            >
+              {customPage.title}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="visual-add-page"
+            onClick={() => setAddingPage(true)}
+          >
+            <Plus size={14} /> Add page
+          </button>
         </div>
         <div
           className={`visual-save-status status-${status}`}
@@ -947,6 +1080,41 @@ export function VisualEditor() {
         </div>
       </header>
 
+      {addingPage && (
+        <section className="visual-new-page-form" aria-label="Create a new page">
+          <div>
+            <strong>Create a page draft</strong>
+            <p>The page will go live at a shareable static URL after you publish it.</p>
+          </div>
+          <label>
+            Title
+            <input
+              autoFocus
+              value={newPageTitle}
+              placeholder="For example: Managed services"
+              onChange={(event) => {
+                setNewPageTitle(event.target.value);
+                setNewPageSlug(slugFromTitle(event.target.value));
+              }}
+            />
+          </label>
+          <label>
+            URL name
+            <input
+              value={newPageSlug}
+              placeholder="managed-services"
+              onChange={(event) => setNewPageSlug(slugFromTitle(event.target.value))}
+            />
+          </label>
+          <button className="admin-btn admin-btn-primary" type="button" onClick={() => void createPage()}>
+            Create draft
+          </button>
+          <button className="admin-btn admin-btn-ghost" type="button" onClick={() => setAddingPage(false)}>
+            Cancel
+          </button>
+        </section>
+      )}
+
       <div className="visual-editor-body">
         <aside className="visual-left-panel">
           <div className="visual-panel-heading">
@@ -1003,7 +1171,7 @@ export function VisualEditor() {
                 );
               })}
           </div>
-          <div className="visual-add-block">
+          {!isCustomPage && <div className="visual-add-block">
             <span>ADD BLOCK</span>
             {page === 'home' ? (
               <>
@@ -1036,7 +1204,16 @@ export function VisualEditor() {
                 </button>
               </>
             )}
-          </div>
+          </div>}
+          {activeCustomPage && (
+            <div className="visual-custom-page-info">
+              <span>NEW PAGE</span>
+              <strong>{activeCustomPage.title}</strong>
+              <a href={customPageHref(activeCustomPage.slug)} target="_blank" rel="noreferrer">
+                Open published URL
+              </a>
+            </div>
+          )}
           <div className="visual-builder-library">
             <span>STRUCTURED BUILDER</span>
             <p>Add safe page blocks. Existing site sections stay protected.</p>
@@ -1122,7 +1299,13 @@ export function VisualEditor() {
             </div>
           )}
           <div className={`visual-canvas visual-canvas-${device}`}>
-            {page === 'home' ? (
+            {isCustomPage ? (
+              <section className="visual-custom-page-cover">
+                <p>Custom INFOStorage page</p>
+                <h1>{activeCustomPage?.title}</h1>
+                <span>{activeCustomPage && customPageHref(activeCustomPage.slug)}</span>
+              </section>
+            ) : page === 'home' ? (
               <HomePreview {...previewProps} />
             ) : (
               <PartnersPreview {...previewProps} />
@@ -1247,6 +1430,120 @@ export function VisualEditor() {
                     : 'Draft'}
                 </small>
               </div>
+              {selectedDocument.type === 'navigation' && (
+                <section className="visual-section-actions visual-header-editor">
+                  <h3>Header navigation</h3>
+                  <p>
+                    Edit the shared header links. These labels and destinations
+                    are used on every public page.
+                  </p>
+                  <label className="visual-field">
+                    <span>Header button label</span>
+                    <input
+                      value={text(selectedDocument.data.ctaLabel, 'Start a conversation')}
+                      onChange={(event) =>
+                        updateField(
+                          { documentId: selectedDocument.id, key: 'ctaLabel' },
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </label>
+                  <label className="visual-field">
+                    <span>Header button destination</span>
+                    <input
+                      value={text(selectedDocument.data.ctaHref, '#contact')}
+                      onChange={(event) =>
+                        updateField(
+                          { documentId: selectedDocument.id, key: 'ctaHref' },
+                          event.target.value,
+                        )
+                      }
+                    />
+                  </label>
+                  {selectedHeaderLinks.map((item, index) => (
+                    <div key={item.id} className="visual-header-link">
+                      <input
+                        aria-label={`Header label ${index + 1}`}
+                        value={item.label}
+                        placeholder="Link label"
+                        onChange={(event) =>
+                          updateHeaderLinks(
+                            selectedDocument.id,
+                            selectedHeaderLinks.map((link, linkIndex) =>
+                              linkIndex === index
+                                ? { ...link, label: event.target.value }
+                                : link,
+                            ),
+                          )
+                        }
+                      />
+                      <input
+                        aria-label={`Header destination ${index + 1}`}
+                        value={item.href}
+                        placeholder="/destination or #section"
+                        onChange={(event) =>
+                          updateHeaderLinks(
+                            selectedDocument.id,
+                            selectedHeaderLinks.map((link, linkIndex) =>
+                              linkIndex === index
+                                ? { ...link, href: event.target.value }
+                                : link,
+                            ),
+                          )
+                        }
+                      />
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={item.enabled}
+                          onChange={(event) =>
+                            updateHeaderLinks(
+                              selectedDocument.id,
+                              selectedHeaderLinks.map((link, linkIndex) =>
+                                linkIndex === index
+                                  ? { ...link, enabled: event.target.checked }
+                                  : link,
+                              ),
+                            )
+                          }
+                        />
+                        Show
+                      </label>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() =>
+                          updateHeaderLinks(
+                            selectedDocument.id,
+                            selectedHeaderLinks.filter(
+                              (_, linkIndex) => linkIndex !== index,
+                            ),
+                          )
+                        }
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      updateHeaderLinks(selectedDocument.id, [
+                        ...selectedHeaderLinks,
+                        {
+                          id: `header-link-${Date.now()}`,
+                          label: 'New link',
+                          href: '#',
+                          enabled: true,
+                        },
+                      ])
+                    }
+                  >
+                    <Plus size={15} /> Add header link
+                  </button>
+                </section>
+              )}
               {selectedFields.map((field) => (
                 <label key={field.key} className="visual-field">
                   <span>{fieldName(field.key)}</span>
@@ -1409,6 +1706,7 @@ function HomePreview(props: PreviewProps) {
         : text(document.data[key], fallback)
       : fallback;
   const site = get('site_settings', 'global');
+  const navigation = get('navigation', 'main');
   const hero = get('home_section', 'hero');
   const approach = get('home_section', 'approach');
   const solutionsHeading = get('home_section', 'solutions-heading');
@@ -1425,6 +1723,9 @@ function HomePreview(props: PreviewProps) {
     selected?.documentId === site?.id && selected?.key === 'logo';
   const solutionFallbacks = DEFAULT_HOME.solutions;
   const serviceFallbacks = DEFAULT_HOME.services;
+  const navLinks = headerLinks(navigation?.data.items).length
+    ? headerLinks(navigation?.data.items)
+    : DEFAULT_HOME.navItems;
 
   return (
     <div className="site-shell visual-public-preview">
@@ -1432,19 +1733,40 @@ function HomePreview(props: PreviewProps) {
         className="hero visual-section"
         onClick={() => hero && onSelectDocument(hero)}
       >
-        <nav className="nav-wrap">
-          <span className="brand brand-image">
+        <nav
+          className="nav-wrap visual-header-preview"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (navigation) onSelectDocument(navigation);
+          }}
+        >
+          <span
+            className="brand brand-image"
+            role={site ? 'button' : undefined}
+            tabIndex={site ? 0 : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (site) onSelectDocument(site, 'logo');
+            }}
+          >
             <span className="brand-logo-frame">
               <img className="brand-logo" src={logo} alt="INFOStorage" />
             </span>
           </span>
           <div className="desktop-links">
-            <span>Solutions</span>
-            <span>Services</span>
-            <span>Why INFOStorage</span>
-            <span>Partners</span>
+            {navLinks
+              .filter((item) => item.enabled)
+              .map((item) => <span key={item.id}>{item.label}</span>)}
           </div>
-          <span className="nav-cta">Start a conversation</span>
+          <span className="nav-cta">
+            <EditorText
+              field={ref(navigation, 'ctaLabel')}
+              value={value(navigation, 'ctaLabel', 'Start a conversation')}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </span>
         </nav>
         <div className="hero-inner">
           <div className="hero-copy">
@@ -1904,25 +2226,55 @@ function PartnersPreview(props: PreviewProps) {
         : text(document.data[key], fallback)
       : fallback;
   const hero = get('page_section', 'partners-hero');
+  const navigation = get('navigation', 'main');
+  const site = get('site_settings', 'global');
   const directory = get('page_section', 'partners-directory');
   const clientsHead = get('page_section', 'partners-clients');
   const partners = documents.filter((document) => document.type === 'partner');
   const clients = documents.filter((document) => document.type === 'client');
   const partnerFallbacks = DEFAULT_PARTNERS.partners;
   const clientFallbacks = DEFAULT_PARTNERS.clients;
+  const navLinks = headerLinks(navigation?.data.items).length
+    ? headerLinks(navigation?.data.items)
+    : DEFAULT_PARTNERS.navItems;
   return (
     <div className="partner-page visual-public-preview">
       <section
         className="partner-hero visual-section"
         onClick={() => hero && onSelectDocument(hero)}
       >
-        <nav className="nav-wrap">
-          <span className="brand">INFOStorage</span>
+        <nav
+          className="nav-wrap visual-header-preview"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (navigation) onSelectDocument(navigation);
+          }}
+        >
+          <span
+            className="brand"
+            role={site ? 'button' : undefined}
+            tabIndex={site ? 0 : undefined}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (site) onSelectDocument(site, 'logo');
+            }}
+          >
+            INFOStorage
+          </span>
           <div className="desktop-links">
-            <span>Solutions</span>
-            <span>Services</span>
-            <span>Partners</span>
+            {navLinks
+              .filter((item) => item.enabled)
+              .map((item) => <span key={item.id}>{item.label}</span>)}
           </div>
+          <span className="nav-cta">
+            <EditorText
+              field={ref(navigation, 'ctaLabel')}
+              value={value(navigation, 'ctaLabel', 'Start a conversation')}
+              selected={selected}
+              onSelect={onSelect}
+              onChange={onChange}
+            />
+          </span>
         </nav>
         <div className="partner-hero-inner section-pad">
           <div className="partner-hero-copy">
