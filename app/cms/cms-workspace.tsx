@@ -10,9 +10,11 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   LogOut,
+  MessageCircle,
   Plus,
   RefreshCcw,
   Save,
+  Send,
   ShieldCheck,
   Upload,
   Users,
@@ -24,7 +26,7 @@ import styles from './cms-workspace.module.css';
 
 type Role = 'admin' | 'editor' | 'viewer';
 type Status = 'draft' | 'published' | 'archived';
-type View = 'content' | 'media' | 'team';
+type View = 'content' | 'media' | 'inbox' | 'team';
 
 type CmsHealth = {
   ready: boolean;
@@ -73,6 +75,27 @@ type CmsMedia = {
   byteSize: number;
   createdAt: string;
   url: string;
+};
+
+type CmsConversation = {
+  id: string;
+  visitorName: string;
+  visitorEmail: string | null;
+  status: 'open' | 'closed';
+  lastMessagePreview: string;
+  lastSenderType: 'visitor' | 'admin';
+  createdAt: string;
+  updatedAt: string;
+  lastMessageAt: string;
+};
+
+type CmsChatMessage = {
+  id: string;
+  conversationId: string;
+  senderType: 'visitor' | 'admin';
+  senderName: string;
+  body: string;
+  createdAt: string;
 };
 
 type Draft = {
@@ -164,6 +187,10 @@ export default function CmsWorkspace() {
   const [draft, setDraft] = useState<Draft>(() => blankDraft());
   const [media, setMedia] = useState<CmsMedia[]>([]);
   const [team, setTeam] = useState<CmsUser[]>([]);
+  const [conversations, setConversations] = useState<CmsConversation[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<CmsConversation | null>(null);
+  const [chatMessages, setChatMessages] = useState<CmsChatMessage[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [showMemberForm, setShowMemberForm] = useState(false);
@@ -220,16 +247,33 @@ export default function CmsWorkspace() {
     setTeam(data.users);
   }, [api]);
 
+  const loadConversations = useCallback(async () => {
+    const data = await api<{ conversations: CmsConversation[] }>('/v1/admin/conversations');
+    setConversations(data.conversations);
+  }, [api]);
+
+  const selectConversation = async (conversation: CmsConversation) => {
+    setSelectedConversation(conversation);
+    try {
+      const data = await api<{ conversation: CmsConversation; messages: CmsChatMessage[] }>(`/v1/admin/conversations/${conversation.id}`);
+      setSelectedConversation(data.conversation);
+      setChatMessages(data.messages);
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not load this conversation.' });
+    }
+  };
+
   const loadRevisions = useCallback(async (id: string) => {
     const data = await api<{ revisions: CmsRevision[] }>(`/v1/admin/documents/${id}/revisions`);
     setRevisions(data.revisions);
   }, [api]);
 
   const refreshWorkspace = useCallback(async () => {
-    await loadDocuments();
+    if (view === 'content') await loadDocuments();
     if (view === 'media') await loadMedia();
+    if (view === 'inbox' && isAdmin) await loadConversations();
     if (view === 'team' && isAdmin) await loadTeam();
-  }, [isAdmin, loadDocuments, loadMedia, loadTeam, view]);
+  }, [isAdmin, loadConversations, loadDocuments, loadMedia, loadTeam, view]);
 
   useEffect(() => {
     const savedEndpoint = sessionStorage.getItem(endpointStorageKey);
@@ -255,6 +299,24 @@ export default function CmsWorkspace() {
       }
     })();
   }, [api, endpoint, loadDocuments, token]);
+
+  useEffect(() => {
+    if (view !== 'inbox' || !isAdmin) return;
+    const refreshInbox = () => {
+      void loadConversations();
+      if (selectedConversation?.id) {
+        void api<{ conversation: CmsConversation; messages: CmsChatMessage[] }>(`/v1/admin/conversations/${selectedConversation.id}`)
+          .then((data) => {
+            setSelectedConversation(data.conversation);
+            setChatMessages(data.messages);
+          })
+          .catch(() => undefined);
+      }
+    };
+    refreshInbox();
+    const interval = window.setInterval(refreshInbox, 8_000);
+    return () => window.clearInterval(interval);
+  }, [api, isAdmin, loadConversations, selectedConversation?.id, view]);
 
   const selectDocument = async (document: CmsDocument) => {
     setSelectedDocument(document);
@@ -390,6 +452,27 @@ export default function CmsWorkspace() {
     }
   };
 
+  const replyToConversation = async (event: SubmitEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!isAdmin || !selectedConversation || !chatDraft.trim()) return;
+    setBusy(true);
+    try {
+      const data = await api<{ message: CmsChatMessage }>(`/v1/admin/conversations/${selectedConversation.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: chatDraft }),
+      });
+      setChatMessages((current) => [...current, data.message]);
+      setChatDraft('');
+      await loadConversations();
+      setNotice({ tone: 'success', message: 'Reply sent to the visitor chat.' });
+    } catch (error) {
+      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not send the reply.' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const signOut = async () => {
     try {
       await api('/v1/admin/logout', { method: 'POST' });
@@ -401,6 +484,9 @@ export default function CmsWorkspace() {
     setUser(null);
     setSelectedDocument(null);
     setDocuments([]);
+    setConversations([]);
+    setSelectedConversation(null);
+    setChatMessages([]);
   };
 
   const documentCount = useMemo(() => ({
@@ -411,6 +497,7 @@ export default function CmsWorkspace() {
   const changeView = (nextView: View) => {
     setView(nextView);
     if (nextView === 'media') void loadMedia();
+    if (nextView === 'inbox' && isAdmin) void loadConversations();
     if (nextView === 'team' && isAdmin) void loadTeam();
   };
 
@@ -491,6 +578,7 @@ export default function CmsWorkspace() {
         <nav className={styles.navigation} aria-label="CMS sections">
           <button className={view === 'content' ? styles.navActive : ''} onClick={() => changeView('content')}><FileText size={18} /> Content <span>{documents.length}</span></button>
           <button className={view === 'media' ? styles.navActive : ''} onClick={() => changeView('media')}><ImageIcon size={18} /> Media</button>
+          {isAdmin && <button className={view === 'inbox' ? styles.navActive : ''} onClick={() => changeView('inbox')}><MessageCircle size={18} /> Inbox <span>{conversations.filter((conversation) => conversation.lastSenderType === 'visitor').length}</span></button>}
           {isAdmin && <button className={view === 'team' ? styles.navActive : ''} onClick={() => changeView('team')}><Users size={18} /> Team</button>}
         </nav>
         <div className={styles.sidebarFooter}>
@@ -503,8 +591,8 @@ export default function CmsWorkspace() {
       <section className={styles.mainPanel}>
         <header className={styles.topbar}>
           <div>
-            <p className={styles.eyebrow}>{view === 'content' ? 'Content library' : view === 'media' ? 'Media library' : 'Team access'}</p>
-            <h1>{view === 'content' ? 'Publishing with a safety net.' : view === 'media' ? 'Files for your stories.' : 'People and permissions.'}</h1>
+            <p className={styles.eyebrow}>{view === 'content' ? 'Content library' : view === 'media' ? 'Media library' : view === 'inbox' ? 'Visitor conversations' : 'Team access'}</p>
+            <h1>{view === 'content' ? 'Publishing with a safety net.' : view === 'media' ? 'Files for your stories.' : view === 'inbox' ? 'Be there when customers need you.' : 'People and permissions.'}</h1>
           </div>
           <div className={styles.topbarActions}>
             <a className={styles.viewSite} href="/" target="_blank" rel="noreferrer"><Eye size={16} /> View site</a>
@@ -607,6 +695,45 @@ export default function CmsWorkspace() {
               ))}
               {media.length === 0 && <div className={styles.emptyState}><ImageIcon size={22} /><p>Your shared media library is empty.</p></div>}
             </div>
+          </section>
+        )}
+
+        {view === 'inbox' && isAdmin && (
+          <section className={styles.inboxLayout}>
+            <section className={styles.conversationList} aria-label="Visitor conversations">
+              <div className={styles.inboxListHead}><div><span>{conversations.length} conversations</span><span>{conversations.filter((conversation) => conversation.lastSenderType === 'visitor').length} awaiting reply</span></div></div>
+              <div className={styles.conversationCards}>
+                {conversations.map((conversation) => (
+                  <button key={conversation.id} type="button" onClick={() => void selectConversation(conversation)} className={`${styles.conversationCard} ${selectedConversation?.id === conversation.id ? styles.selectedConversation : ''}`}>
+                    <span className={`${styles.messageDot} ${conversation.lastSenderType === 'visitor' ? styles.waitingReply : styles.replied}`} />
+                    <div><small>{conversation.lastSenderType === 'visitor' ? 'Visitor reply' : 'Admin reply'}</small><strong>{conversation.visitorName}</strong><em>{conversation.lastMessagePreview || 'No message preview'}</em></div>
+                    <span>{dateTime(conversation.lastMessageAt)}</span>
+                  </button>
+                ))}
+                {conversations.length === 0 && <div className={styles.emptyState}><MessageCircle size={22} /><p>When a visitor messages the site, their conversation will appear here.</p></div>}
+              </div>
+            </section>
+
+            <section className={styles.chatPanel}>
+              {selectedConversation ? (
+                <>
+                  <div className={styles.chatPanelHead}>
+                    <div><span>Conversation with</span><h2>{selectedConversation.visitorName}</h2><p>{selectedConversation.visitorEmail || 'No email shared'} · Started {dateTime(selectedConversation.createdAt)}</p></div>
+                    <span className={`${styles.statusPill} ${selectedConversation.lastSenderType === 'visitor' ? styles.draft : styles.published}`}>{selectedConversation.lastSenderType === 'visitor' ? 'Awaiting reply' : 'Replied'}</span>
+                  </div>
+                  <div className={styles.chatTranscript} aria-live="polite">
+                    {chatMessages.map((message) => <article key={message.id} className={message.senderType === 'admin' ? styles.adminMessage : styles.visitorMessage}><small>{message.senderType === 'admin' ? message.senderName : selectedConversation.visitorName} · {dateTime(message.createdAt)}</small><p>{message.body}</p></article>)}
+                  </div>
+                  <form className={styles.replyComposer} onSubmit={replyToConversation}>
+                    <label htmlFor="cms-chat-reply">Reply to visitor</label>
+                    <textarea id="cms-chat-reply" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={2000} placeholder="Write a helpful reply…" />
+                    <button className={styles.primaryButton} disabled={busy || !chatDraft.trim()}><Send size={16} /> Send reply</button>
+                  </form>
+                </>
+              ) : (
+                <div className={styles.emptyState}><MessageCircle size={26} /><p>Select a conversation to read the exchange and reply as an administrator.</p></div>
+              )}
+            </section>
           </section>
         )}
 

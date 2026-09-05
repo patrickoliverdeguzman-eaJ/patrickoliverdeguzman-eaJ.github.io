@@ -1,143 +1,193 @@
 'use client';
 
-import { ArrowUpRight, Bot, MessageCircle, Send, Sparkles, X } from 'lucide-react';
-import { type SubmitEvent, useRef, useState } from 'react';
+import { CircleAlert, MessageCircle, RefreshCw, Send, X } from 'lucide-react';
+import { type SubmitEvent, useCallback, useEffect, useRef, useState } from 'react';
+
+type SenderType = 'visitor' | 'admin';
 
 type ChatMessage = {
-  role: 'assistant' | 'visitor';
-  text: string;
-  action?: { label: string; href: string };
+  id: string;
+  senderType: SenderType;
+  senderName: string;
+  body: string;
+  createdAt: string;
 };
 
-const starters = ['What solutions do you offer?', 'How can you protect our data?', 'Do you provide support?', 'How do I contact you?'];
+type ChatConversation = {
+  id: string;
+  visitorName: string;
+  status: 'open' | 'closed';
+  lastMessageAt: string;
+};
 
-function answerFor(question: string): Omit<ChatMessage, 'role'> {
-  const value = question.toLowerCase();
+type VisitorSession = {
+  id: string;
+  token: string;
+};
 
-  if (/backup|recover|recovery|disaster|protect|archive|continuity/.test(value)) {
-    return {
-      text: 'INFOStorage designs data-protection strategies around your risk profile, including business continuity, disaster recovery, enterprise backup and restore, and digital archiving.',
-      action: { label: 'Discuss data protection', href: '/#contact' },
-    };
-  }
+const endpoint = process.env.NEXT_PUBLIC_CMS_API_URL ?? 'https://infostorage-cms.patrickoliverdeguzman.workers.dev';
+const visitorStorageKey = 'infostorage.chat.visitor-session';
 
-  if (/security|network|firewall|waf|dlp|cyber|isolation/.test(value)) {
-    return {
-      text: 'The network and security practice covers cybersecurity, identity and access governance, next-generation firewalls, load balancing, WAF and DLP compliance, monitoring, and web isolation.',
-      action: { label: 'Explore network & security', href: '/#solutions' },
-    };
-  }
-
-  if (/storage|server|cloud|oracle|system|platform|virtual|infrastructure/.test(value)) {
-    return {
-      text: 'INFOStorage brings together enterprise storage, Oracle Cloud Infrastructure and engineered systems, server and storage virtualisation, and hyper-converged infrastructure around the work your organisation needs to do.',
-      action: { label: 'Explore systems & platforms', href: '/#solutions' },
-    };
-  }
-
-  if (/support|helpdesk|maintain|installation|implement|service|consult/.test(value)) {
-    return {
-      text: 'Yes. INFOStorage provides installation, maintenance and onsite support, helpdesk, consulting and implementation, project management, and systems integration.',
-      action: { label: 'View value added services', href: '/#services' },
-    };
-  }
-
-  if (/partner|client|vendor|brand/.test(value)) {
-    return {
-      text: 'INFOStorage works across enterprise infrastructure, data protection, cloud, and workplace technology. You can explore selected technology partners and valued clients on the partners page.',
-      action: { label: 'View partners & clients', href: '/partners' },
-    };
-  }
-
-  if (/contact|phone|address|location|quote|talk|speak|sales/.test(value)) {
-    return {
-      text: 'You can reach INFOStorage at +63 2 8899 4878 or visit 1101 AIC Burgundy Empire Tower, Ortigas Center, Pasig City. Share the outcome you need and the team can recommend a practical next step.',
-      action: { label: 'Contact INFOStorage', href: '/#contact' },
-    };
-  }
-
-  if (/cms|admin|content studio|publish/.test(value)) {
-    return {
-      text: 'Content Studio is the private workspace for authorised INFOStorage administrators to manage drafts, revisions, media, and publishing. It is not available to public visitors.',
-    };
-  }
-
-  return {
-    text: 'I can help you find the right INFOStorage capability. Ask about systems and cloud, network security, data protection, support services, partners, or how to contact the team.',
-  };
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : 'Your message could not be sent. Please try again.';
 }
 
 export default function SiteChatbot() {
   const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState('');
+  const [session, setSession] = useState<VisitorSession | null>(null);
+  const [conversation, setConversation] = useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: 'assistant',
-      text: 'Hello — I’m the INFOStorage assistant. I can point you to the right capability, service, or next conversation.',
-    },
+    { id: 'welcome', senderType: 'admin', senderName: 'INFOStorage', body: 'Hello — send us a message and an INFOStorage administrator can reply here.', createdAt: '' },
   ]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [visitorName, setVisitorName] = useState('');
+  const [visitorEmail, setVisitorEmail] = useState('');
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [loadingConversation, setLoadingConversation] = useState(false);
+  const [error, setError] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const request = useCallback(async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
+    const response = await fetch(`${endpoint}${path}`, options);
+    const data = await response.json().catch(() => ({})) as T & { error?: string };
+    if (!response.ok) throw new Error(data.error ?? 'The chat service is unavailable.');
+    return data;
+  }, []);
+
+  const loadConversation = useCallback(async (savedSession: VisitorSession) => {
+    setLoadingConversation(true);
+    try {
+      const data = await request<{ conversation: ChatConversation; messages: ChatMessage[] }>(`/v1/chat/conversations/${savedSession.id}`, {
+        headers: { 'X-Visitor-Token': savedSession.token },
+      });
+      setConversation(data.conversation);
+      setMessages(data.messages);
+      setError('');
+    } catch (caught) {
+      setError(formatError(caught));
+    } finally {
+      setLoadingConversation(false);
+    }
+  }, [request]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(visitorStorageKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as VisitorSession;
+      if (!saved?.id || !saved?.token) return;
+      window.setTimeout(() => {
+        setSession(saved);
+        void loadConversation(saved);
+      }, 0);
+    } catch {
+      localStorage.removeItem(visitorStorageKey);
+    }
+  }, [loadConversation]);
+
+  useEffect(() => {
+    if (!open || !session || !conversation) return;
+    const interval = window.setInterval(() => void loadConversation(session), 8_000);
+    return () => window.clearInterval(interval);
+  }, [conversation, loadConversation, open, session]);
 
   const openChat = () => {
     setOpen(true);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const send = (raw: string) => {
-    const text = raw.trim();
-    if (!text) return;
-    setMessages((current) => [...current, { role: 'visitor', text }, { role: 'assistant', ...answerFor(text) }]);
-    setDraft('');
-    window.setTimeout(() => inputRef.current?.focus(), 0);
+  const resetConversation = () => {
+    localStorage.removeItem(visitorStorageKey);
+    setSession(null);
+    setConversation(null);
+    setMessages([{ id: 'welcome', senderType: 'admin', senderName: 'INFOStorage', body: 'Hello — send us a message and an INFOStorage administrator can reply here.', createdAt: '' }]);
+    setError('');
+  };
+
+  const send = async () => {
+    const message = draft.trim();
+    if (!message || busy || loadingConversation) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (!session) {
+        const data = await request<{ conversation: ChatConversation; messages: ChatMessage[]; visitorToken: string }>('/v1/chat/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visitorName, visitorEmail, message }),
+        });
+        const nextSession = { id: data.conversation.id, token: data.visitorToken };
+        localStorage.setItem(visitorStorageKey, JSON.stringify(nextSession));
+        setSession(nextSession);
+        setConversation(data.conversation);
+        setMessages(data.messages);
+      } else {
+        const data = await request<{ message: ChatMessage }>(`/v1/chat/conversations/${session.id}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Visitor-Token': session.token },
+          body: JSON.stringify({ message }),
+        });
+        setMessages((current) => [...current, data.message]);
+      }
+      setDraft('');
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    } catch (caught) {
+      setError(formatError(caught));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submit = (event: SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
-    send(draft);
+    void send();
   };
 
   return (
-    <aside className="site-chatbot" aria-label="INFOStorage assistant">
+    <aside className="site-chatbot" aria-label="Chat with INFOStorage">
       {open && (
-        <section id="infostorage-assistant" className="chatbot-panel" aria-live="polite">
+        <section id="infostorage-assistant" className="chatbot-panel">
           <header className="chatbot-header">
             <div className="chatbot-title">
-              <span className="chatbot-mark"><Bot size={18} /></span>
-              <span><strong>INFOStorage assistant</strong><small>Enterprise technology guidance</small></span>
+              <span className="chatbot-mark"><MessageCircle size={18} /></span>
+              <span><strong>Chat with INFOStorage</strong><small>Messages go directly to the admin inbox</small></span>
             </div>
-            <button type="button" className="chatbot-close" onClick={() => setOpen(false)} aria-label="Close assistant"><X size={18} /></button>
+            <button type="button" className="chatbot-close" onClick={() => setOpen(false)} aria-label="Close chat"><X size={18} /></button>
           </header>
 
-          <div className="chatbot-thread">
-            {messages.map((message, index) => (
-              <div className={`chatbot-message chatbot-message-${message.role}`} key={`${message.role}-${index}`}>
-                {message.role === 'assistant' && <Bot size={15} aria-hidden="true" />}
+          <div className="chatbot-thread" aria-live="polite">
+            {messages.map((message) => (
+              <div className={`chatbot-message chatbot-message-${message.senderType}`} key={message.id}>
                 <div>
-                  <p>{message.text}</p>
-                  {message.action && <a href={message.action.href}>{message.action.label} <ArrowUpRight size={13} /></a>}
+                  <small>{message.senderType === 'admin' ? message.senderName || 'INFOStorage' : 'You'}</small>
+                  <p>{message.body}</p>
                 </div>
               </div>
             ))}
+            {loadingConversation && <div className="chatbot-connection"><RefreshCw size={14} className="chatbot-spin" /> Reconnecting to your conversation…</div>}
           </div>
 
-          {messages.length === 1 && (
-            <div className="chatbot-starters" aria-label="Suggested questions">
-              {starters.map((starter) => <button type="button" key={starter} onClick={() => send(starter)}>{starter}</button>)}
+          {!session && (
+            <div className="chatbot-contact">
+              <input value={visitorName} onChange={(event) => setVisitorName(event.target.value)} placeholder="Name (optional)" autoComplete="name" />
+              <input value={visitorEmail} onChange={(event) => setVisitorEmail(event.target.value)} placeholder="Email (optional, for follow-up)" type="email" autoComplete="email" />
             </div>
           )}
 
+          {error && <div className="chatbot-error"><CircleAlert size={15} /><span>{error}</span>{session && <button type="button" onClick={resetConversation}>Start over</button>}</div>}
+
           <form className="chatbot-composer" onSubmit={submit}>
-            <label className="sr-only" htmlFor="infostorage-chat-input">Ask INFOStorage assistant</label>
-            <input ref={inputRef} id="infostorage-chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Ask about INFOStorage…" autoComplete="off" />
-            <button type="submit" aria-label="Send message" disabled={!draft.trim()}><Send size={17} /></button>
+            <label className="sr-only" htmlFor="infostorage-chat-input">Message INFOStorage</label>
+            <textarea ref={inputRef} id="infostorage-chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={session ? 'Write a reply…' : 'How can we help?'} maxLength={2000} rows={2} />
+            <button type="submit" aria-label="Send message" disabled={!draft.trim() || busy || loadingConversation}>{busy ? <RefreshCw size={17} className="chatbot-spin" /> : <Send size={17} />}</button>
           </form>
+          <p className="chatbot-note">Replies appear here on this device. Leave an email if you would also like follow-up.</p>
         </section>
       )}
 
       <button type="button" className="chatbot-launcher" onClick={open ? () => setOpen(false) : openChat} aria-expanded={open} aria-controls="infostorage-assistant">
         {open ? <X size={21} /> : <MessageCircle size={21} />}
-        <span>{open ? 'Close assistant' : 'Ask INFOStorage'}</span>
-        {!open && <Sparkles size={15} className="chatbot-sparkle" />}
+        <span>{open ? 'Close chat' : 'Chat with us'}</span>
       </button>
     </aside>
   );

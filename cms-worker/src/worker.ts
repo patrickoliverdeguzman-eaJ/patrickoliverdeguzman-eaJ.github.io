@@ -50,8 +50,33 @@ type MediaRow = {
   created_at: string;
 };
 
+type ChatSender = 'visitor' | 'admin';
+
+type ChatConversationRow = {
+  id: string;
+  visitor_name: string;
+  visitor_email: string | null;
+  status: 'open' | 'closed';
+  last_message_preview: string;
+  last_sender_type: ChatSender;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string;
+};
+
+type ChatMessageRow = {
+  id: string;
+  conversation_id: string;
+  sender_type: ChatSender;
+  sender_name: string;
+  body: string;
+  created_at: string;
+};
+
 const MAX_JSON_BYTES = 128 * 1024;
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
+const MAX_CHAT_MESSAGE_CHARS = 2_000;
+const MAX_CHAT_CONVERSATIONS = 100;
 const SESSION_DAYS = 12;
 // Cloudflare Workers currently supports at most 100,000 PBKDF2 iterations.
 const PASSWORD_ITERATIONS = 100_000;
@@ -105,6 +130,28 @@ function validateEmail(value: unknown): string {
     throw new HttpError(400, 'Enter a valid email address.', 'invalid_input');
   }
   return email;
+}
+
+function validateOptionalEmail(value: unknown): string | undefined {
+  const email = asOptionalString(value, 254);
+  if (!email) return undefined;
+  const normalized = email.toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new HttpError(400, 'Enter a valid email address.', 'invalid_input');
+  }
+  return normalized;
+}
+
+function validateChatMessage(value: unknown): string {
+  return asString(value, 'Message', MAX_CHAT_MESSAGE_CHARS);
+}
+
+function validateConversationId(value: unknown): string {
+  const id = asString(value, 'Conversation', 64);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    throw new HttpError(400, 'Conversation is invalid.', 'invalid_input');
+  }
+  return id;
 }
 
 function validatePassword(value: unknown): string {
@@ -258,7 +305,7 @@ function withCors(response: Response, request: Request, env: CmsEnv): Response {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', origin);
   headers.set('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  headers.set('access-control-allow-headers', 'Authorization, Content-Type, X-File-Name, X-Alt-Text');
+  headers.set('access-control-allow-headers', 'Authorization, Content-Type, X-File-Name, X-Alt-Text, X-Visitor-Token');
   headers.set('access-control-max-age', '600');
   headers.append('vary', 'Origin');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -294,6 +341,11 @@ function readBearerToken(request: Request): string | null {
   if (!authorization?.startsWith('Bearer ')) return null;
   const token = authorization.slice('Bearer '.length).trim();
   return token || null;
+}
+
+function readVisitorToken(request: Request): string | null {
+  const token = request.headers.get('x-visitor-token')?.trim() ?? '';
+  return /^[A-Za-z0-9_-]{32,128}$/.test(token) ? token : null;
 }
 
 async function sessionUser(request: Request, env: CmsEnv): Promise<CmsUser | null> {
@@ -367,6 +419,32 @@ function formatMedia(media: MediaRow, request: Request): JsonRecord {
     byteSize: media.byte_size,
     createdAt: media.created_at,
     url,
+  };
+}
+
+function formatChatConversation(conversation: ChatConversationRow, includeContact = false): JsonRecord {
+  const result: JsonRecord = {
+    id: conversation.id,
+    visitorName: conversation.visitor_name,
+    status: conversation.status,
+    lastMessagePreview: conversation.last_message_preview,
+    lastSenderType: conversation.last_sender_type,
+    createdAt: conversation.created_at,
+    updatedAt: conversation.updated_at,
+    lastMessageAt: conversation.last_message_at,
+  };
+  if (includeContact) result.visitorEmail = conversation.visitor_email;
+  return result;
+}
+
+function formatChatMessage(message: ChatMessageRow): JsonRecord {
+  return {
+    id: message.id,
+    conversationId: message.conversation_id,
+    senderType: message.sender_type,
+    senderName: message.sender_name,
+    body: message.body,
+    createdAt: message.created_at,
   };
 }
 
@@ -665,6 +743,171 @@ async function restoreRevision(
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
 
+async function getChatConversation(id: string, env: CmsEnv): Promise<ChatConversationRow> {
+  const conversation = await env.CMS_DB.prepare(
+    `SELECT id, visitor_name, visitor_email, status, last_message_preview, last_sender_type,
+      created_at, updated_at, last_message_at
+     FROM cms_chat_conversations WHERE id = ?`,
+  )
+    .bind(id)
+    .first<ChatConversationRow>();
+  if (!conversation) throw new HttpError(404, 'Conversation was not found.', 'not_found');
+  return conversation;
+}
+
+async function getConversationMessages(id: string, env: CmsEnv): Promise<ChatMessageRow[]> {
+  const messages = await env.CMS_DB.prepare(
+    `SELECT id, conversation_id, sender_type, sender_name, body, created_at
+     FROM cms_chat_messages WHERE conversation_id = ? ORDER BY created_at ASC`,
+  )
+    .bind(id)
+    .all<ChatMessageRow>();
+  return messages.results;
+}
+
+async function requireVisitorConversation(id: string, request: Request, env: CmsEnv): Promise<ChatConversationRow> {
+  const token = readVisitorToken(request);
+  if (!token) throw new HttpError(401, 'This chat session is not available on this device.', 'visitor_unauthenticated');
+  const tokenHash = await sha256Hex(token);
+  const conversation = await env.CMS_DB.prepare(
+    `SELECT id, visitor_name, visitor_email, status, last_message_preview, last_sender_type,
+      created_at, updated_at, last_message_at
+     FROM cms_chat_conversations WHERE id = ? AND visitor_token_hash = ?`,
+  )
+    .bind(id, tokenHash)
+    .first<ChatConversationRow>();
+  if (!conversation) throw new HttpError(404, 'Conversation was not found.', 'not_found');
+  return conversation;
+}
+
+async function createVisitorConversation(request: Request, env: CmsEnv): Promise<Response> {
+  const body = await readJson(request);
+  const visitorName = asOptionalString(body.visitorName, 80) || 'Website visitor';
+  const visitorEmail = validateOptionalEmail(body.visitorEmail) ?? null;
+  const message = validateChatMessage(body.message);
+  const id = crypto.randomUUID();
+  const token = randomToken();
+  const tokenHash = await sha256Hex(token);
+  const createdAt = now();
+  const messageRow: ChatMessageRow = {
+    id: crypto.randomUUID(),
+    conversation_id: id,
+    sender_type: 'visitor',
+    sender_name: visitorName,
+    body: message,
+    created_at: createdAt,
+  };
+
+  await env.CMS_DB.batch([
+    env.CMS_DB.prepare(
+      `INSERT INTO cms_chat_conversations (
+        id, visitor_token_hash, visitor_name, visitor_email, status, last_message_preview,
+        last_sender_type, created_at, updated_at, last_message_at
+      ) VALUES (?, ?, ?, ?, 'open', ?, 'visitor', ?, ?, ?)`,
+    ).bind(id, tokenHash, visitorName, visitorEmail, message.slice(0, 180), createdAt, createdAt, createdAt),
+    env.CMS_DB.prepare(
+      `INSERT INTO cms_chat_messages (id, conversation_id, sender_type, sender_name, body, created_at)
+       VALUES (?, ?, 'visitor', ?, ?, ?)`,
+    ).bind(messageRow.id, id, visitorName, message, createdAt),
+  ]);
+
+  return json({
+    conversation: formatChatConversation(await getChatConversation(id, env)),
+    messages: [formatChatMessage(messageRow)],
+    visitorToken: token,
+  }, { status: 201 });
+}
+
+async function addVisitorMessage(id: string, request: Request, env: CmsEnv): Promise<Response> {
+  const body = await readJson(request);
+  const message = validateChatMessage(body.message);
+  const conversation = await requireVisitorConversation(id, request, env);
+  if (conversation.status === 'closed') throw new HttpError(409, 'This conversation is closed.', 'conversation_closed');
+
+  const createdAt = now();
+  const messageRow: ChatMessageRow = {
+    id: crypto.randomUUID(),
+    conversation_id: id,
+    sender_type: 'visitor',
+    sender_name: conversation.visitor_name,
+    body: message,
+    created_at: createdAt,
+  };
+  await env.CMS_DB.batch([
+    env.CMS_DB.prepare(
+      `INSERT INTO cms_chat_messages (id, conversation_id, sender_type, sender_name, body, created_at)
+       VALUES (?, ?, 'visitor', ?, ?, ?)`,
+    ).bind(messageRow.id, id, conversation.visitor_name, message, createdAt),
+    env.CMS_DB.prepare(
+      `UPDATE cms_chat_conversations
+       SET last_message_preview = ?, last_sender_type = 'visitor', updated_at = ?, last_message_at = ?
+       WHERE id = ?`,
+    ).bind(message.slice(0, 180), createdAt, createdAt, id),
+  ]);
+  return json({ message: formatChatMessage(messageRow) }, { status: 201 });
+}
+
+async function getVisitorConversation(id: string, request: Request, env: CmsEnv): Promise<Response> {
+  const conversation = await requireVisitorConversation(id, request, env);
+  const messages = await getConversationMessages(id, env);
+  return json({ conversation: formatChatConversation(conversation), messages: messages.map(formatChatMessage) });
+}
+
+async function publicChat(parts: string[], request: Request, env: CmsEnv): Promise<Response> {
+  if (parts[0] !== 'conversations') throw new HttpError(404, 'Route was not found.', 'not_found');
+  if (parts.length === 1 && request.method === 'POST') return createVisitorConversation(request, env);
+  const id = parts[1] ? validateConversationId(decodeURIComponent(parts[1])) : '';
+  if (!id) throw new HttpError(404, 'Route was not found.', 'not_found');
+  if (parts.length === 2 && request.method === 'GET') return getVisitorConversation(id, request, env);
+  if (parts.length === 3 && parts[2] === 'messages' && request.method === 'POST') return addVisitorMessage(id, request, env);
+  throw new HttpError(404, 'Route was not found.', 'not_found');
+}
+
+async function listConversations(env: CmsEnv): Promise<Response> {
+  const conversations = await env.CMS_DB.prepare(
+    `SELECT id, visitor_name, visitor_email, status, last_message_preview, last_sender_type,
+      created_at, updated_at, last_message_at
+     FROM cms_chat_conversations ORDER BY last_message_at DESC LIMIT ?`,
+  )
+    .bind(MAX_CHAT_CONVERSATIONS)
+    .all<ChatConversationRow>();
+  return json({ conversations: conversations.results.map((conversation) => formatChatConversation(conversation, true)) });
+}
+
+async function getAdminConversation(id: string, env: CmsEnv): Promise<Response> {
+  const [conversation, messages] = await Promise.all([getChatConversation(id, env), getConversationMessages(id, env)]);
+  return json({ conversation: formatChatConversation(conversation, true), messages: messages.map(formatChatMessage) });
+}
+
+async function addAdminMessage(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const body = await readJson(request);
+  const message = validateChatMessage(body.message);
+  const conversation = await getChatConversation(id, env);
+  if (conversation.status === 'closed') throw new HttpError(409, 'Reopen this conversation before replying.', 'conversation_closed');
+
+  const createdAt = now();
+  const messageRow: ChatMessageRow = {
+    id: crypto.randomUUID(),
+    conversation_id: id,
+    sender_type: 'admin',
+    sender_name: user.display_name,
+    body: message,
+    created_at: createdAt,
+  };
+  await env.CMS_DB.batch([
+    env.CMS_DB.prepare(
+      `INSERT INTO cms_chat_messages (id, conversation_id, sender_type, sender_name, body, created_at)
+       VALUES (?, ?, 'admin', ?, ?, ?)`,
+    ).bind(messageRow.id, id, user.display_name, message, createdAt),
+    env.CMS_DB.prepare(
+      `UPDATE cms_chat_conversations
+       SET last_message_preview = ?, last_sender_type = 'admin', updated_at = ?, last_message_at = ?
+       WHERE id = ?`,
+    ).bind(message.slice(0, 180), createdAt, createdAt, id),
+  ]);
+  return json({ message: formatChatMessage(messageRow) }, { status: 201 });
+}
+
 async function listUsers(env: CmsEnv): Promise<Response> {
   const result = await env.CMS_DB.prepare(
     'SELECT id, email, display_name, role FROM cms_users ORDER BY created_at ASC',
@@ -867,6 +1110,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
   }
 
   if (parts[1] === 'content') return publicContent(parts.slice(1), request, env);
+  if (parts[1] === 'chat') return publicChat(parts.slice(2), request, env);
   if (parts[1] === 'media' && parts.length === 3 && request.method === 'GET') {
     return serveMedia(decodeURIComponent(parts[2]), env);
   }
@@ -888,6 +1132,17 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     requireRole(user, 'admin');
     if (request.method === 'GET') return listUsers(env);
     if (request.method === 'POST') return createUser(request, env);
+  }
+
+  if (adminRoute[0] === 'conversations') {
+    requireRole(user, 'admin');
+    if (adminRoute.length === 1 && request.method === 'GET') return listConversations(env);
+    const conversationId = adminRoute[1] ? validateConversationId(decodeURIComponent(adminRoute[1])) : '';
+    if (!conversationId) throw new HttpError(404, 'Route was not found.', 'not_found');
+    if (adminRoute.length === 2 && request.method === 'GET') return getAdminConversation(conversationId, env);
+    if (adminRoute.length === 3 && adminRoute[2] === 'messages' && request.method === 'POST') {
+      return addAdminMessage(conversationId, request, user, env);
+    }
   }
 
   if (adminRoute[0] === 'documents') {
