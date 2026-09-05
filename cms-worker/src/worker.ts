@@ -53,7 +53,8 @@ type MediaRow = {
 const MAX_JSON_BYTES = 128 * 1024;
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 const SESSION_DAYS = 12;
-const PASSWORD_ITERATIONS = 180_000;
+// Cloudflare Workers currently supports at most 100,000 PBKDF2 iterations.
+const PASSWORD_ITERATIONS = 100_000;
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8' };
 const encoder = new TextEncoder();
 
