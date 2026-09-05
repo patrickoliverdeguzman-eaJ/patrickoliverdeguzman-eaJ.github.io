@@ -755,6 +755,31 @@
   padding: clamp(1rem, 2.4vw, 2.4rem);
   background: radial-gradient(circle at top, #f8edf1, #e6d7de 70%);
 }
+.visual-initialize-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.2rem;
+  width: min(100%, 1240px);
+  margin: 0 auto 1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(130, 0, 64, 0.2);
+  border-radius: 0.7rem;
+  background: #fffafd;
+  box-shadow: 0 0.5rem 1.5rem rgba(62, 9, 36, 0.08);
+}
+.visual-initialize-banner strong {
+  display: block;
+  color: #510028;
+  font-size: 0.85rem;
+}
+.visual-initialize-banner p {
+  max-width: 690px;
+  margin: 0.28rem 0 0;
+  color: #735568;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
 .visual-canvas {
   min-height: 100%;
   margin: 0 auto;
@@ -844,6 +869,16 @@
 .visual-editable:focus {
   outline: 2px solid #e64a91;
   outline-offset: 3px;
+}
+.visual-editable-image {
+  cursor: pointer;
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color 140ms ease;
+}
+.visual-editable-image:hover,
+.visual-editable-image.visual-editable-selected {
+  outline-color: #e64a91;
 }
 .visual-repeater {
   cursor: grab;

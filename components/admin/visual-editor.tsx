@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { CMS_API } from '@/lib/cms-api';
 import { adminPath } from '@/lib/site-paths';
+import siteContentSeed from '@/cms-worker/seed/site-content.json';
 import {
   DEFAULT_HOME,
   DEFAULT_PARTNERS,
@@ -237,6 +238,9 @@ function EditorText({
   return (
     <span
       className={`${className ?? ''} visual-editable ${isSelected ? 'visual-editable-selected' : ''}`}
+      data-cms-document-id={field?.documentId}
+      data-cms-field={field?.key}
+      data-cms-type={field ? 'text' : undefined}
       contentEditable={Boolean(field)}
       suppressContentEditableWarning
       spellCheck={false}
@@ -272,6 +276,7 @@ export function VisualEditor() {
   const [message, setMessage] = useState('Loading editor…');
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [layersOpen, setLayersOpen] = useState(true);
+  const [initializing, setInitializing] = useState(false);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -315,6 +320,10 @@ export function VisualEditor() {
   }, [load]);
 
   const pageLayers = PAGE_LAYERS[page];
+  const hasPageBindings =
+    page === 'home'
+      ? Boolean(findDocument(documents, 'home_section', 'hero'))
+      : Boolean(findDocument(documents, 'page_section', 'partners-hero'));
   const pageDocuments = useMemo(() => {
     const types = new Set(pageLayers.map((layer) => layer.type));
     return documents.filter((document) => types.has(document.type));
@@ -340,6 +349,55 @@ export function VisualEditor() {
 
   const selectDocument = (document: CmsDocument, key = '__title') =>
     setSelected({ documentId: document.id, key });
+
+  const initializeEditableDrafts = async () => {
+    setInitializing(true);
+    setStatus('saving');
+    setMessage('Creating editable draft bindings…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        authorization: `Bearer ${token}`,
+      };
+      const known = new Set(
+        documents.map((document) => `${document.type}/${document.slug}`),
+      );
+      const toCreate = siteContentSeed.documents.filter(
+        (entry) => !known.has(`${entry.type}/${entry.slug}`),
+      );
+      const created: CmsDocument[] = [];
+      for (const entry of toCreate) {
+        const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            ...entry,
+            note: 'Initialized for visual editing from the current static site',
+          }),
+        });
+        const result = (await response.json().catch(() => ({}))) as {
+          document?: CmsDocument;
+          error?: string;
+        };
+        if (!response.ok || !result.document)
+          throw new Error(result.error ?? `Could not bind ${entry.title}.`);
+        created.push(result.document);
+      }
+      setDocuments((current) => [...current, ...created]);
+      setStatus('saved');
+      setMessage('Editable drafts are ready — the live site is unchanged');
+    } catch (error) {
+      setStatus('error');
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'The editable draft bindings could not be created.',
+      );
+    } finally {
+      setInitializing(false);
+    }
+  };
 
   const saveDrafts = useCallback(
     async (ids = Array.from(dirtyIds)) => {
@@ -863,6 +921,30 @@ export function VisualEditor() {
         </aside>
 
         <main className="visual-canvas-area">
+          {!hasPageBindings && (
+            <div className="visual-initialize-banner" role="status">
+              <div>
+                <strong>
+                  These visible values are currently static fallbacks.
+                </strong>
+                <p>
+                  Create CMS draft records to bind every heading, button, card,
+                  and image to the editor. Nothing will be published
+                  automatically.
+                </p>
+              </div>
+              <button
+                className="admin-btn admin-btn-primary"
+                type="button"
+                disabled={initializing}
+                onClick={() => void initializeEditableDrafts()}
+              >
+                {initializing
+                  ? 'Preparing editable drafts…'
+                  : 'Make this page editable'}
+              </button>
+            </div>
+          )}
           <div className={`visual-canvas visual-canvas-${device}`}>
             {page === 'home' ? (
               <HomePreview {...previewProps} />
@@ -1070,6 +1152,8 @@ function HomePreview(props: PreviewProps) {
   );
   const services = documents.filter((document) => document.type === 'service');
   const logo = value(site, 'logo', DEFAULT_HOME.site.logo);
+  const logoSelected =
+    selected?.documentId === site?.id && selected?.key === 'logo';
   const solutionFallbacks = DEFAULT_HOME.solutions;
   const serviceFallbacks = DEFAULT_HOME.services;
 
@@ -1170,7 +1254,25 @@ function HomePreview(props: PreviewProps) {
           </div>
           <div className="hero-brand-stage">
             <div className="hero-logo-plaque">
-              <img src={logo} alt="INFOStorage" />
+              <img
+                className={`visual-editable-image ${logoSelected ? 'visual-editable-selected' : ''}`}
+                src={logo}
+                alt="INFOStorage"
+                role={site ? 'button' : undefined}
+                tabIndex={site ? 0 : undefined}
+                data-cms-document-id={site?.id}
+                data-cms-field={site ? 'logo' : undefined}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (site) onSelectDocument(site, 'logo');
+                }}
+                onKeyDown={(event) => {
+                  if (site && (event.key === 'Enter' || event.key === ' ')) {
+                    event.preventDefault();
+                    onSelectDocument(site, 'logo');
+                  }
+                }}
+              />
             </div>
           </div>
         </div>

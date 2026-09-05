@@ -12,6 +12,7 @@ import {
   LogOut,
   MessageCircle,
   Plus,
+  PanelsTopLeft,
   RefreshCcw,
   Save,
   Send,
@@ -21,7 +22,13 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { type SubmitEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  type SubmitEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import styles from './cms-workspace.module.css';
 
 type Role = 'admin' | 'editor' | 'viewer';
@@ -107,9 +114,15 @@ type Draft = {
   note: string;
 };
 
-const endpointFromBuild = process.env.NEXT_PUBLIC_CMS_API_URL ?? 'https://infostorage-cms.patrickoliverdeguzman.workers.dev';
+const endpointFromBuild =
+  process.env.NEXT_PUBLIC_CMS_API_URL ??
+  'https://infostorage-cms.patrickoliverdeguzman.workers.dev';
 const endpointStorageKey = 'infostorage.cms.endpoint';
 const tokenStorageKey = 'infostorage.cms.session-token';
+const visualEditorHref =
+  process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true'
+    ? '/admin/visual-editor.html'
+    : '/admin/visual-editor';
 
 const contentTypes = [
   { value: 'site_settings', label: 'Site settings' },
@@ -122,7 +135,11 @@ const contentTypes = [
 
 const starterContent: Record<string, Record<string, unknown>> = {
   site_settings: {
-    hero: { eyebrow: 'Premium solutions integrator', title: '', description: '' },
+    hero: {
+      eyebrow: 'Premium solutions integrator',
+      title: '',
+      description: '',
+    },
     contact: { phone: '', address: '' },
   },
   solution: { description: '', items: [] },
@@ -162,7 +179,10 @@ function dateTime(value: string | null): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
     ? value
-    : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      }).format(date);
 }
 
 function fileSize(bytes: number): string {
@@ -172,7 +192,11 @@ function fileSize(bytes: number): string {
 }
 
 function statusLabel(status: Status): string {
-  return status === 'published' ? 'Published' : status === 'archived' ? 'Archived' : 'Draft';
+  return status === 'published'
+    ? 'Published'
+    : status === 'archived'
+      ? 'Archived'
+      : 'Draft';
 }
 
 export default function CmsWorkspace() {
@@ -182,51 +206,85 @@ export default function CmsWorkspace() {
   const [user, setUser] = useState<CmsUser | null>(null);
   const [view, setView] = useState<View>('content');
   const [documents, setDocuments] = useState<CmsDocument[]>([]);
-  const [selectedDocument, setSelectedDocument] = useState<CmsDocument | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<CmsDocument | null>(
+    null,
+  );
   const [revisions, setRevisions] = useState<CmsRevision[]>([]);
   const [draft, setDraft] = useState<Draft>(() => blankDraft());
   const [media, setMedia] = useState<CmsMedia[]>([]);
   const [team, setTeam] = useState<CmsUser[]>([]);
   const [conversations, setConversations] = useState<CmsConversation[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<CmsConversation | null>(null);
+  const [selectedConversation, setSelectedConversation] =
+    useState<CmsConversation | null>(null);
   const [chatMessages, setChatMessages] = useState<CmsChatMessage[]>([]);
   const [chatDraft, setChatDraft] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
+  const [notice, setNotice] = useState<{
+    tone: 'success' | 'error';
+    message: string;
+  } | null>(null);
   const [showMemberForm, setShowMemberForm] = useState(false);
 
   const canEdit = user?.role === 'admin' || user?.role === 'editor';
   const isAdmin = user?.role === 'admin';
 
-  const api = useCallback(async <T,>(path: string, options: RequestInit = {}, overrideToken?: string): Promise<T> => {
-    const apiEndpoint = cleanEndpoint(endpoint);
-    if (!apiEndpoint) throw new Error('Enter the CMS API address first.');
+  const api = useCallback(
+    async <T,>(
+      path: string,
+      options: RequestInit = {},
+      overrideToken?: string,
+    ): Promise<T> => {
+      const apiEndpoint = cleanEndpoint(endpoint);
+      if (!apiEndpoint) throw new Error('Enter the CMS API address first.');
 
-    const headers = new Headers(options.headers);
-    const activeToken = overrideToken ?? token;
-    if (activeToken) headers.set('Authorization', `Bearer ${activeToken}`);
-    const response = await fetch(`${apiEndpoint}${path}`, { ...options, headers });
-    const data = await response.json().catch(() => ({})) as T & { error?: string };
-    if (!response.ok) throw new Error(data.error ?? 'The CMS could not complete that request.');
-    return data;
-  }, [endpoint, token]);
+      const headers = new Headers(options.headers);
+      const activeToken = overrideToken ?? token;
+      if (activeToken) headers.set('Authorization', `Bearer ${activeToken}`);
+      const response = await fetch(`${apiEndpoint}${path}`, {
+        ...options,
+        headers,
+      });
+      const data = (await response.json().catch(() => ({}))) as T & {
+        error?: string;
+      };
+      if (!response.ok)
+        throw new Error(
+          data.error ?? 'The CMS could not complete that request.',
+        );
+      return data;
+    },
+    [endpoint, token],
+  );
 
   const checkHealth = useCallback(async () => {
     setBusy(true);
     setNotice(null);
     try {
       const resolvedEndpoint = cleanEndpoint(endpoint);
-      if (!resolvedEndpoint) throw new Error('Enter the CMS API address first.');
+      if (!resolvedEndpoint)
+        throw new Error('Enter the CMS API address first.');
       const response = await fetch(`${resolvedEndpoint}/v1/health`);
-      const data = await response.json() as CmsHealth & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? 'The CMS API is unavailable.');
+      const data = (await response.json()) as CmsHealth & { error?: string };
+      if (!response.ok)
+        throw new Error(data.error ?? 'The CMS API is unavailable.');
       setEndpoint(resolvedEndpoint);
       sessionStorage.setItem(endpointStorageKey, resolvedEndpoint);
       setHealth(data);
-      setNotice({ tone: 'success', message: data.ready ? 'CMS connection verified.' : 'CMS database migration is still required.' });
+      setNotice({
+        tone: 'success',
+        message: data.ready
+          ? 'CMS connection verified.'
+          : 'CMS database migration is still required.',
+      });
     } catch (error) {
       setHealth(null);
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not reach the CMS API.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not reach the CMS API.',
+      });
     } finally {
       setBusy(false);
     }
@@ -248,25 +306,41 @@ export default function CmsWorkspace() {
   }, [api]);
 
   const loadConversations = useCallback(async () => {
-    const data = await api<{ conversations: CmsConversation[] }>('/v1/admin/conversations');
+    const data = await api<{ conversations: CmsConversation[] }>(
+      '/v1/admin/conversations',
+    );
     setConversations(data.conversations);
   }, [api]);
 
   const selectConversation = async (conversation: CmsConversation) => {
     setSelectedConversation(conversation);
     try {
-      const data = await api<{ conversation: CmsConversation; messages: CmsChatMessage[] }>(`/v1/admin/conversations/${conversation.id}`);
+      const data = await api<{
+        conversation: CmsConversation;
+        messages: CmsChatMessage[];
+      }>(`/v1/admin/conversations/${conversation.id}`);
       setSelectedConversation(data.conversation);
       setChatMessages(data.messages);
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not load this conversation.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not load this conversation.',
+      });
     }
   };
 
-  const loadRevisions = useCallback(async (id: string) => {
-    const data = await api<{ revisions: CmsRevision[] }>(`/v1/admin/documents/${id}/revisions`);
-    setRevisions(data.revisions);
-  }, [api]);
+  const loadRevisions = useCallback(
+    async (id: string) => {
+      const data = await api<{ revisions: CmsRevision[] }>(
+        `/v1/admin/documents/${id}/revisions`,
+      );
+      setRevisions(data.revisions);
+    },
+    [api],
+  );
 
   const refreshWorkspace = useCallback(async () => {
     if (view === 'content') await loadDocuments();
@@ -305,7 +379,9 @@ export default function CmsWorkspace() {
     const refreshInbox = () => {
       void loadConversations();
       if (selectedConversation?.id) {
-        void api<{ conversation: CmsConversation; messages: CmsChatMessage[] }>(`/v1/admin/conversations/${selectedConversation.id}`)
+        void api<{ conversation: CmsConversation; messages: CmsChatMessage[] }>(
+          `/v1/admin/conversations/${selectedConversation.id}`,
+        )
           .then((data) => {
             setSelectedConversation(data.conversation);
             setChatMessages(data.messages);
@@ -325,7 +401,11 @@ export default function CmsWorkspace() {
     try {
       await loadRevisions(document.id);
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not load revisions.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error ? error.message : 'Could not load revisions.',
+      });
     }
   };
 
@@ -339,37 +419,76 @@ export default function CmsWorkspace() {
       if (Array.isArray(data) || data === null || typeof data !== 'object') {
         throw new Error('Content data must be a JSON object.');
       }
-      const body = JSON.stringify({ type: draft.type, title: draft.title, slug: draft.slug, data, note: draft.note || undefined });
+      const body = JSON.stringify({
+        type: draft.type,
+        title: draft.title,
+        slug: draft.slug,
+        data,
+        note: draft.note || undefined,
+      });
       const response = draft.id
-        ? await api<{ document: CmsDocument }>(`/v1/admin/documents/${draft.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body })
-        : await api<{ document: CmsDocument }>('/v1/admin/documents', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+        ? await api<{ document: CmsDocument }>(
+            `/v1/admin/documents/${draft.id}`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body,
+            },
+          )
+        : await api<{ document: CmsDocument }>('/v1/admin/documents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+          });
       setSelectedDocument(response.document);
       setDraft(fromDocument(response.document));
       await Promise.all([loadDocuments(), loadRevisions(response.document.id)]);
-      setNotice({ tone: 'success', message: draft.id ? 'Draft saved as a new revision.' : 'New draft created.' });
+      setNotice({
+        tone: 'success',
+        message: draft.id
+          ? 'Draft saved as a new revision.'
+          : 'New draft created.',
+      });
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not save the draft.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error ? error.message : 'Could not save the draft.',
+      });
     } finally {
       setBusy(false);
     }
   };
 
-  const updatePublication = async (action: 'publish' | 'unpublish' | 'archive') => {
+  const updatePublication = async (
+    action: 'publish' | 'unpublish' | 'archive',
+  ) => {
     if (!selectedDocument || !canEdit) return;
-    const labels = { publish: 'published', unpublish: 'returned to draft', archive: 'archived' };
+    const labels = {
+      publish: 'published',
+      unpublish: 'returned to draft',
+      archive: 'archived',
+    };
     setBusy(true);
     try {
       const method = action === 'archive' ? 'DELETE' : 'POST';
-      const path = action === 'archive'
-        ? `/v1/admin/documents/${selectedDocument.id}`
-        : `/v1/admin/documents/${selectedDocument.id}/${action}`;
+      const path =
+        action === 'archive'
+          ? `/v1/admin/documents/${selectedDocument.id}`
+          : `/v1/admin/documents/${selectedDocument.id}/${action}`;
       const response = await api<{ document: CmsDocument }>(path, { method });
       setSelectedDocument(response.document);
       setDraft(fromDocument(response.document));
       await loadDocuments();
       setNotice({ tone: 'success', message: `Entry ${labels[action]}.` });
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not update publication state.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not update publication state.',
+      });
     } finally {
       setBusy(false);
     }
@@ -386,9 +505,18 @@ export default function CmsWorkspace() {
       setSelectedDocument(response.document);
       setDraft(fromDocument(response.document));
       await Promise.all([loadDocuments(), loadRevisions(response.document.id)]);
-      setNotice({ tone: 'success', message: `Revision ${revisionNumber} restored as a new draft.` });
+      setNotice({
+        tone: 'success',
+        message: `Revision ${revisionNumber} restored as a new draft.`,
+      });
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not restore that revision.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not restore that revision.',
+      });
     } finally {
       setBusy(false);
     }
@@ -399,7 +527,9 @@ export default function CmsWorkspace() {
     if (!canEdit) return;
     const form = event.currentTarget;
     const input = form.elements.namedItem('file') as HTMLInputElement | null;
-    const altInput = form.elements.namedItem('altText') as HTMLInputElement | null;
+    const altInput = form.elements.namedItem(
+      'altText',
+    ) as HTMLInputElement | null;
     const file = input?.files?.[0];
     if (!file) {
       setNotice({ tone: 'error', message: 'Choose a file to upload.' });
@@ -420,7 +550,13 @@ export default function CmsWorkspace() {
       await loadMedia();
       setNotice({ tone: 'success', message: 'Media uploaded to the library.' });
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not upload this file.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not upload this file.',
+      });
     } finally {
       setBusy(false);
     }
@@ -446,7 +582,13 @@ export default function CmsWorkspace() {
       await loadTeam();
       setNotice({ tone: 'success', message: 'Team member added.' });
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not add the team member.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Could not add the team member.',
+      });
     } finally {
       setBusy(false);
     }
@@ -457,17 +599,27 @@ export default function CmsWorkspace() {
     if (!isAdmin || !selectedConversation || !chatDraft.trim()) return;
     setBusy(true);
     try {
-      const data = await api<{ message: CmsChatMessage }>(`/v1/admin/conversations/${selectedConversation.id}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: chatDraft }),
-      });
+      const data = await api<{ message: CmsChatMessage }>(
+        `/v1/admin/conversations/${selectedConversation.id}/messages`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: chatDraft }),
+        },
+      );
       setChatMessages((current) => [...current, data.message]);
       setChatDraft('');
       await loadConversations();
-      setNotice({ tone: 'success', message: 'Reply sent to the visitor chat.' });
+      setNotice({
+        tone: 'success',
+        message: 'Reply sent to the visitor chat.',
+      });
     } catch (error) {
-      setNotice({ tone: 'error', message: error instanceof Error ? error.message : 'Could not send the reply.' });
+      setNotice({
+        tone: 'error',
+        message:
+          error instanceof Error ? error.message : 'Could not send the reply.',
+      });
     } finally {
       setBusy(false);
     }
@@ -480,6 +632,7 @@ export default function CmsWorkspace() {
       // The local session should still be removed when the network is unavailable.
     }
     sessionStorage.removeItem(tokenStorageKey);
+    localStorage.removeItem('cms_token');
     setToken('');
     setUser(null);
     setSelectedDocument(null);
@@ -489,10 +642,14 @@ export default function CmsWorkspace() {
     setChatMessages([]);
   };
 
-  const documentCount = useMemo(() => ({
-    draft: documents.filter((document) => document.status === 'draft').length,
-    published: documents.filter((document) => document.status === 'published').length,
-  }), [documents]);
+  const documentCount = useMemo(
+    () => ({
+      draft: documents.filter((document) => document.status === 'draft').length,
+      published: documents.filter((document) => document.status === 'published')
+        .length,
+    }),
+    [documents],
+  );
 
   const changeView = (nextView: View) => {
     setView(nextView);
@@ -506,13 +663,24 @@ export default function CmsWorkspace() {
       <main className={styles.authPage}>
         <section className={styles.authPanel}>
           <div className={styles.authBrand}>
-            <Link href="/" aria-label="INFOStorage home"><Image src="/infostorage-logo.png" alt="INFOStorage Corporation" width={142} height={44} priority /></Link>
+            <Link href="/" aria-label="INFOStorage home">
+              <Image
+                src="/infostorage-logo.png"
+                alt="INFOStorage Corporation"
+                width={142}
+                height={44}
+                priority
+              />
+            </Link>
             <span>Content Studio</span>
           </div>
           <div className={styles.authIntro}>
             <p className={styles.eyebrow}>Private publishing workspace</p>
             <h1>Control the site without touching its code.</h1>
-            <p>Manage structured content, keep drafts private, restore a prior revision, and publish only when it is ready.</p>
+            <p>
+              Manage structured content, keep drafts private, restore a prior
+              revision, and publish only when it is ready.
+            </p>
           </div>
           <div className={styles.connectCard}>
             <label htmlFor="cms-endpoint">CMS API address</label>
@@ -524,45 +692,77 @@ export default function CmsWorkspace() {
                 placeholder="https://your-cms.workers.dev"
                 autoComplete="url"
               />
-              <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => void checkHealth()}>
-                {busy ? <LoaderCircle size={16} className={styles.spin} /> : <RefreshCcw size={16} />} Connect
+              <button
+                type="button"
+                className={styles.secondaryButton}
+                disabled={busy}
+                onClick={() => void checkHealth()}
+              >
+                {busy ? (
+                  <LoaderCircle size={16} className={styles.spin} />
+                ) : (
+                  <RefreshCcw size={16} />
+                )}{' '}
+                Connect
               </button>
             </div>
-            <p className={styles.helper}>The API address is saved only for this browser session.</p>
+            <p className={styles.helper}>
+              The API address is saved only for this browser session.
+            </p>
           </div>
 
           {notice && <Notice notice={notice} />}
 
           {health?.migrationRequired && (
-            <div className={styles.warningBox}><CircleAlert size={18} /> The API is online, but its database schema has not been applied yet.</div>
+            <div className={styles.warningBox}>
+              <CircleAlert size={18} /> The API is online, but its database
+              schema has not been applied yet.
+            </div>
           )}
 
           {health?.ready && !health.setupConfigured && (
-            <div className={styles.warningBox}><ShieldCheck size={18} /> The CMS is deployed. Create its one-time setup token in Cloudflare before adding the first administrator.</div>
+            <div className={styles.warningBox}>
+              <ShieldCheck size={18} /> The CMS is deployed. Create its one-time
+              setup token in Cloudflare before adding the first administrator.
+            </div>
           )}
 
           {health?.ready && health.setupConfigured && !health.initialized && (
-            <BootstrapForm api={api} onAuthenticated={(result) => {
-              sessionStorage.setItem(tokenStorageKey, result.token);
-              setToken(result.token);
-              setUser(result.user);
-              setNotice({ tone: 'success', message: 'First administrator created.' });
-            }} />
+            <BootstrapForm
+              api={api}
+              onAuthenticated={(result) => {
+                sessionStorage.setItem(tokenStorageKey, result.token);
+                localStorage.setItem('cms_token', result.token);
+                setToken(result.token);
+                setUser(result.user);
+                setNotice({
+                  tone: 'success',
+                  message: 'First administrator created.',
+                });
+              }}
+            />
           )}
 
           {health?.ready && health.initialized && (
-            <LoginForm api={api} onAuthenticated={(result) => {
-              sessionStorage.setItem(tokenStorageKey, result.token);
-              setToken(result.token);
-              setUser(result.user);
-              setNotice(null);
-            }} />
+            <LoginForm
+              api={api}
+              onAuthenticated={(result) => {
+                sessionStorage.setItem(tokenStorageKey, result.token);
+                localStorage.setItem('cms_token', result.token);
+                setToken(result.token);
+                setUser(result.user);
+                setNotice(null);
+              }}
+            />
           )}
         </section>
         <aside className={styles.authAside} aria-hidden="true">
           <div className={styles.authOrbitOne} />
           <div className={styles.authOrbitTwo} />
-          <div className={styles.authSignal}><ShieldCheck size={28} /><span>Drafts stay private until you publish.</span></div>
+          <div className={styles.authSignal}>
+            <ShieldCheck size={28} />
+            <span>Drafts stay private until you publish.</span>
+          </div>
         </aside>
       </main>
     );
@@ -572,31 +772,111 @@ export default function CmsWorkspace() {
     <main className={styles.workspace}>
       <aside className={styles.sidebar}>
         <Link className={styles.studioBrand} href="/">
-          <Image src="/infostorage-logo.png" alt="INFOStorage Corporation" width={128} height={40} />
-          <span>Content<br />Studio</span>
+          <Image
+            src="/infostorage-logo.png"
+            alt="INFOStorage Corporation"
+            width={128}
+            height={40}
+          />
+          <span>
+            Content
+            <br />
+            Studio
+          </span>
         </Link>
         <nav className={styles.navigation} aria-label="CMS sections">
-          <button className={view === 'content' ? styles.navActive : ''} onClick={() => changeView('content')}><FileText size={18} /> Content <span>{documents.length}</span></button>
-          <button className={view === 'media' ? styles.navActive : ''} onClick={() => changeView('media')}><ImageIcon size={18} /> Media</button>
-          {isAdmin && <button className={view === 'inbox' ? styles.navActive : ''} onClick={() => changeView('inbox')}><MessageCircle size={18} /> Inbox <span>{conversations.filter((conversation) => conversation.lastSenderType === 'visitor').length}</span></button>}
-          {isAdmin && <button className={view === 'team' ? styles.navActive : ''} onClick={() => changeView('team')}><Users size={18} /> Team</button>}
+          <button
+            className={view === 'content' ? styles.navActive : ''}
+            onClick={() => changeView('content')}
+          >
+            <FileText size={18} /> Content <span>{documents.length}</span>
+          </button>
+          <button
+            className={view === 'media' ? styles.navActive : ''}
+            onClick={() => changeView('media')}
+          >
+            <ImageIcon size={18} /> Media
+          </button>
+          {isAdmin && (
+            <button
+              className={view === 'inbox' ? styles.navActive : ''}
+              onClick={() => changeView('inbox')}
+            >
+              <MessageCircle size={18} /> Inbox{' '}
+              <span>
+                {
+                  conversations.filter(
+                    (conversation) => conversation.lastSenderType === 'visitor',
+                  ).length
+                }
+              </span>
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              className={view === 'team' ? styles.navActive : ''}
+              onClick={() => changeView('team')}
+            >
+              <Users size={18} /> Team
+            </button>
+          )}
         </nav>
         <div className={styles.sidebarFooter}>
-          <div className={styles.userMark}>{user.displayName.slice(0, 1).toUpperCase()}</div>
-          <div><strong>{user.displayName}</strong><span>{user.role}</span></div>
-          <button aria-label="Sign out" onClick={() => void signOut()}><LogOut size={17} /></button>
+          <div className={styles.userMark}>
+            {user.displayName.slice(0, 1).toUpperCase()}
+          </div>
+          <div>
+            <strong>{user.displayName}</strong>
+            <span>{user.role}</span>
+          </div>
+          <button aria-label="Sign out" onClick={() => void signOut()}>
+            <LogOut size={17} />
+          </button>
         </div>
       </aside>
 
       <section className={styles.mainPanel}>
         <header className={styles.topbar}>
           <div>
-            <p className={styles.eyebrow}>{view === 'content' ? 'Content library' : view === 'media' ? 'Media library' : view === 'inbox' ? 'Visitor conversations' : 'Team access'}</p>
-            <h1>{view === 'content' ? 'Publishing with a safety net.' : view === 'media' ? 'Files for your stories.' : view === 'inbox' ? 'Be there when customers need you.' : 'People and permissions.'}</h1>
+            <p className={styles.eyebrow}>
+              {view === 'content'
+                ? 'Content library'
+                : view === 'media'
+                  ? 'Media library'
+                  : view === 'inbox'
+                    ? 'Visitor conversations'
+                    : 'Team access'}
+            </p>
+            <h1>
+              {view === 'content'
+                ? 'Publishing with a safety net.'
+                : view === 'media'
+                  ? 'Files for your stories.'
+                  : view === 'inbox'
+                    ? 'Be there when customers need you.'
+                    : 'People and permissions.'}
+            </h1>
           </div>
           <div className={styles.topbarActions}>
-            <a className={styles.viewSite} href="/" target="_blank" rel="noreferrer"><Eye size={16} /> View site</a>
-            <button className={styles.iconButton} aria-label="Refresh workspace" onClick={() => void refreshWorkspace()} disabled={busy}><RefreshCcw size={17} /></button>
+            <Link className={styles.viewSite} href={visualEditorHref}>
+              <PanelsTopLeft size={16} /> Visual editor
+            </Link>
+            <a
+              className={styles.viewSite}
+              href="/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Eye size={16} /> View site
+            </a>
+            <button
+              className={styles.iconButton}
+              aria-label="Refresh workspace"
+              onClick={() => void refreshWorkspace()}
+              disabled={busy}
+            >
+              <RefreshCcw size={17} />
+            </button>
           </div>
         </header>
 
@@ -604,10 +884,27 @@ export default function CmsWorkspace() {
 
         {view === 'content' && (
           <div className={styles.contentLayout}>
-            <section className={styles.documentList} aria-label="Content entries">
+            <section
+              className={styles.documentList}
+              aria-label="Content entries"
+            >
               <div className={styles.listHead}>
-                <div><span>{documentCount.published} live</span><span>{documentCount.draft} draft</span></div>
-                {canEdit && <button className={styles.addButton} onClick={() => { setSelectedDocument(null); setRevisions([]); setDraft(blankDraft()); }}><Plus size={17} /> New</button>}
+                <div>
+                  <span>{documentCount.published} live</span>
+                  <span>{documentCount.draft} draft</span>
+                </div>
+                {canEdit && (
+                  <button
+                    className={styles.addButton}
+                    onClick={() => {
+                      setSelectedDocument(null);
+                      setRevisions([]);
+                      setDraft(blankDraft());
+                    }}
+                  >
+                    <Plus size={17} /> New
+                  </button>
+                )}
               </div>
               <div className={styles.documentCards}>
                 {documents.map((document) => (
@@ -616,58 +913,213 @@ export default function CmsWorkspace() {
                     onClick={() => void selectDocument(document)}
                     className={`${styles.documentCard} ${selectedDocument?.id === document.id ? styles.selectedDocument : ''}`}
                   >
-                    <span className={`${styles.statusDot} ${styles[document.status]}`} />
-                    <div><small>{contentTypes.find((type) => type.value === document.type)?.label ?? document.type}</small><strong>{document.title}</strong><em>/{document.slug}</em></div>
-                    <span className={styles.cardStatus}>{statusLabel(document.status)}</span>
+                    <span
+                      className={`${styles.statusDot} ${styles[document.status]}`}
+                    />
+                    <div>
+                      <small>
+                        {contentTypes.find(
+                          (type) => type.value === document.type,
+                        )?.label ?? document.type}
+                      </small>
+                      <strong>{document.title}</strong>
+                      <em>/{document.slug}</em>
+                    </div>
+                    <span className={styles.cardStatus}>
+                      {statusLabel(document.status)}
+                    </span>
                   </button>
                 ))}
-                {documents.length === 0 && <div className={styles.emptyState}><FileText size={22} /><p>No entries yet. Start with a small, structured piece of content.</p></div>}
+                {documents.length === 0 && (
+                  <div className={styles.emptyState}>
+                    <FileText size={22} />
+                    <p>
+                      No entries yet. Start with a small, structured piece of
+                      content.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
             <section className={styles.editorPanel}>
               <div className={styles.editorHead}>
                 <div>
-                  <span>{selectedDocument ? `Revision ${selectedDocument.currentRevision}` : 'New content'}</span>
+                  <span>
+                    {selectedDocument
+                      ? `Revision ${selectedDocument.currentRevision}`
+                      : 'New content'}
+                  </span>
                   <h2>{selectedDocument?.title || 'Create a content entry'}</h2>
                 </div>
-                {selectedDocument && <span className={`${styles.statusPill} ${styles[selectedDocument.status]}`}>{statusLabel(selectedDocument.status)}</span>}
+                {selectedDocument && (
+                  <span
+                    className={`${styles.statusPill} ${styles[selectedDocument.status]}`}
+                  >
+                    {statusLabel(selectedDocument.status)}
+                  </span>
+                )}
               </div>
               <form className={styles.editorForm} onSubmit={saveDocument}>
                 <div className={styles.fieldGrid}>
-                  <label>Content type
-                    <select value={draft.type} disabled={Boolean(draft.id) || !canEdit} onChange={(event) => setDraft((current) => ({ ...current, type: event.target.value, data: current.id ? current.data : JSON.stringify(starterContent[event.target.value] ?? {}, null, 2) }))}>
-                      {contentTypes.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+                  <label>
+                    Content type
+                    <select
+                      value={draft.type}
+                      disabled={Boolean(draft.id) || !canEdit}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          type: event.target.value,
+                          data: current.id
+                            ? current.data
+                            : JSON.stringify(
+                                starterContent[event.target.value] ?? {},
+                                null,
+                                2,
+                              ),
+                        }))
+                      }
+                    >
+                      {contentTypes.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
                     </select>
                   </label>
-                  <label>Slug
-                    <input value={draft.slug} disabled={!canEdit} onChange={(event) => setDraft((current) => ({ ...current, slug: event.target.value }))} placeholder="e.g. data-protection" />
+                  <label>
+                    Slug
+                    <input
+                      value={draft.slug}
+                      disabled={!canEdit}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          slug: event.target.value,
+                        }))
+                      }
+                      placeholder="e.g. data-protection"
+                    />
                   </label>
                 </div>
-                <label>Title
-                  <input value={draft.title} disabled={!canEdit} onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Clear, audience-facing title" />
+                <label>
+                  Title
+                  <input
+                    value={draft.title}
+                    disabled={!canEdit}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        title: event.target.value,
+                      }))
+                    }
+                    placeholder="Clear, audience-facing title"
+                  />
                 </label>
-                <label>Structured fields <span>JSON object</span>
-                  <textarea value={draft.data} disabled={!canEdit} onChange={(event) => setDraft((current) => ({ ...current, data: event.target.value }))} spellCheck="false" />
+                <label>
+                  Structured fields <span>JSON object</span>
+                  <textarea
+                    value={draft.data}
+                    disabled={!canEdit}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        data: event.target.value,
+                      }))
+                    }
+                    spellCheck="false"
+                  />
                 </label>
-                <label>Revision note <span>optional</span>
-                  <input value={draft.note} disabled={!canEdit} onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))} placeholder="What changed?" />
+                <label>
+                  Revision note <span>optional</span>
+                  <input
+                    value={draft.note}
+                    disabled={!canEdit}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        note: event.target.value,
+                      }))
+                    }
+                    placeholder="What changed?"
+                  />
                 </label>
                 <div className={styles.editorActions}>
-                  {canEdit && <button className={styles.primaryButton} disabled={busy}><Save size={17} /> {busy ? 'Saving…' : 'Save draft'}</button>}
-                  {selectedDocument && canEdit && selectedDocument.status !== 'published' && <button type="button" className={styles.publishButton} disabled={busy} onClick={() => void updatePublication('publish')}><CircleCheck size={17} /> Publish</button>}
-                  {selectedDocument && canEdit && selectedDocument.status === 'published' && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => void updatePublication('unpublish')}><ChevronLeft size={17} /> Unpublish</button>}
-                  {selectedDocument && canEdit && selectedDocument.status !== 'archived' && <button type="button" className={styles.archiveButton} disabled={busy} onClick={() => void updatePublication('archive')}><Archive size={16} /> Archive</button>}
+                  {canEdit && (
+                    <button className={styles.primaryButton} disabled={busy}>
+                      <Save size={17} /> {busy ? 'Saving…' : 'Save draft'}
+                    </button>
+                  )}
+                  {selectedDocument &&
+                    canEdit &&
+                    selectedDocument.status !== 'published' && (
+                      <button
+                        type="button"
+                        className={styles.publishButton}
+                        disabled={busy}
+                        onClick={() => void updatePublication('publish')}
+                      >
+                        <CircleCheck size={17} /> Publish
+                      </button>
+                    )}
+                  {selectedDocument &&
+                    canEdit &&
+                    selectedDocument.status === 'published' && (
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        disabled={busy}
+                        onClick={() => void updatePublication('unpublish')}
+                      >
+                        <ChevronLeft size={17} /> Unpublish
+                      </button>
+                    )}
+                  {selectedDocument &&
+                    canEdit &&
+                    selectedDocument.status !== 'archived' && (
+                      <button
+                        type="button"
+                        className={styles.archiveButton}
+                        disabled={busy}
+                        onClick={() => void updatePublication('archive')}
+                      >
+                        <Archive size={16} /> Archive
+                      </button>
+                    )}
                 </div>
               </form>
 
               {selectedDocument && (
                 <div className={styles.revisionsPanel}>
-                  <div><p className={styles.eyebrow}>Revision history</p><span>Restoring creates a new draft; it never rewrites history.</span></div>
+                  <div>
+                    <p className={styles.eyebrow}>Revision history</p>
+                    <span>
+                      Restoring creates a new draft; it never rewrites history.
+                    </span>
+                  </div>
                   <ol>
                     {revisions.map((revision) => (
                       <li key={revision.id}>
-                        <div><strong>Revision {revision.revisionNumber}</strong><span>{revision.note || 'Saved draft'} · {dateTime(revision.createdAt)}</span></div>
-                        {canEdit && revision.revisionNumber !== selectedDocument.currentRevision && <button type="button" onClick={() => void restoreRevision(revision.revisionNumber)} disabled={busy}><RefreshCcw size={14} /> Restore</button>}
+                        <div>
+                          <strong>Revision {revision.revisionNumber}</strong>
+                          <span>
+                            {revision.note || 'Saved draft'} ·{' '}
+                            {dateTime(revision.createdAt)}
+                          </span>
+                        </div>
+                        {canEdit &&
+                          revision.revisionNumber !==
+                            selectedDocument.currentRevision && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void restoreRevision(revision.revisionNumber)
+                              }
+                              disabled={busy}
+                            >
+                              <RefreshCcw size={14} /> Restore
+                            </button>
+                          )}
                       </li>
                     ))}
                   </ol>
@@ -679,38 +1131,135 @@ export default function CmsWorkspace() {
 
         {view === 'media' && (
           <section className={styles.libraryPanel}>
-            {canEdit && <form className={styles.uploadCard} onSubmit={uploadMedia}>
-              <div><Upload size={20} /><strong>Add media</strong><span>Images, video, and PDFs up to 10 MB.</span></div>
-              <input name="file" type="file" accept="image/*,video/*,application/pdf" />
-              <input name="altText" placeholder="Alt text (recommended for images)" />
-              <button className={styles.primaryButton} disabled={busy}><Upload size={16} /> Upload</button>
-            </form>}
+            {canEdit && (
+              <form className={styles.uploadCard} onSubmit={uploadMedia}>
+                <div>
+                  <Upload size={20} />
+                  <strong>Add media</strong>
+                  <span>Images, video, and PDFs up to 10 MB.</span>
+                </div>
+                <input
+                  name="file"
+                  type="file"
+                  accept="image/*,video/*,application/pdf"
+                />
+                <input
+                  name="altText"
+                  placeholder="Alt text (recommended for images)"
+                />
+                <button className={styles.primaryButton} disabled={busy}>
+                  <Upload size={16} /> Upload
+                </button>
+              </form>
+            )}
             <div className={styles.mediaGrid}>
               {media.map((item) => (
                 <article className={styles.mediaCard} key={item.id}>
-                  <div className={styles.mediaPreview}>{item.mimeType.startsWith('image/') ? <Image src={item.url} alt={item.altText || item.filename} fill unoptimized sizes="(max-width: 640px) 100vw, 220px" /> : <ImageIcon size={24} />}</div>
-                  <strong>{item.filename}</strong><span>{fileSize(item.byteSize)} · {item.mimeType}</span>
-                  <button type="button" onClick={() => navigator.clipboard.writeText(item.url).then(() => setNotice({ tone: 'success', message: 'Media URL copied.' })).catch(() => setNotice({ tone: 'error', message: 'Could not copy the media URL.' }))}>Copy URL</button>
+                  <div className={styles.mediaPreview}>
+                    {item.mimeType.startsWith('image/') ? (
+                      <Image
+                        src={item.url}
+                        alt={item.altText || item.filename}
+                        fill
+                        unoptimized
+                        sizes="(max-width: 640px) 100vw, 220px"
+                      />
+                    ) : (
+                      <ImageIcon size={24} />
+                    )}
+                  </div>
+                  <strong>{item.filename}</strong>
+                  <span>
+                    {fileSize(item.byteSize)} · {item.mimeType}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigator.clipboard
+                        .writeText(item.url)
+                        .then(() =>
+                          setNotice({
+                            tone: 'success',
+                            message: 'Media URL copied.',
+                          }),
+                        )
+                        .catch(() =>
+                          setNotice({
+                            tone: 'error',
+                            message: 'Could not copy the media URL.',
+                          }),
+                        )
+                    }
+                  >
+                    Copy URL
+                  </button>
                 </article>
               ))}
-              {media.length === 0 && <div className={styles.emptyState}><ImageIcon size={22} /><p>Your shared media library is empty.</p></div>}
+              {media.length === 0 && (
+                <div className={styles.emptyState}>
+                  <ImageIcon size={22} />
+                  <p>Your shared media library is empty.</p>
+                </div>
+              )}
             </div>
           </section>
         )}
 
         {view === 'inbox' && isAdmin && (
           <section className={styles.inboxLayout}>
-            <section className={styles.conversationList} aria-label="Visitor conversations">
-              <div className={styles.inboxListHead}><div><span>{conversations.length} conversations</span><span>{conversations.filter((conversation) => conversation.lastSenderType === 'visitor').length} awaiting reply</span></div></div>
+            <section
+              className={styles.conversationList}
+              aria-label="Visitor conversations"
+            >
+              <div className={styles.inboxListHead}>
+                <div>
+                  <span>{conversations.length} conversations</span>
+                  <span>
+                    {
+                      conversations.filter(
+                        (conversation) =>
+                          conversation.lastSenderType === 'visitor',
+                      ).length
+                    }{' '}
+                    awaiting reply
+                  </span>
+                </div>
+              </div>
               <div className={styles.conversationCards}>
                 {conversations.map((conversation) => (
-                  <button key={conversation.id} type="button" onClick={() => void selectConversation(conversation)} className={`${styles.conversationCard} ${selectedConversation?.id === conversation.id ? styles.selectedConversation : ''}`}>
-                    <span className={`${styles.messageDot} ${conversation.lastSenderType === 'visitor' ? styles.waitingReply : styles.replied}`} />
-                    <div><small>{conversation.lastSenderType === 'visitor' ? 'Visitor reply' : 'Admin reply'}</small><strong>{conversation.visitorName}</strong><em>{conversation.lastMessagePreview || 'No message preview'}</em></div>
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    onClick={() => void selectConversation(conversation)}
+                    className={`${styles.conversationCard} ${selectedConversation?.id === conversation.id ? styles.selectedConversation : ''}`}
+                  >
+                    <span
+                      className={`${styles.messageDot} ${conversation.lastSenderType === 'visitor' ? styles.waitingReply : styles.replied}`}
+                    />
+                    <div>
+                      <small>
+                        {conversation.lastSenderType === 'visitor'
+                          ? 'Visitor reply'
+                          : 'Admin reply'}
+                      </small>
+                      <strong>{conversation.visitorName}</strong>
+                      <em>
+                        {conversation.lastMessagePreview ||
+                          'No message preview'}
+                      </em>
+                    </div>
                     <span>{dateTime(conversation.lastMessageAt)}</span>
                   </button>
                 ))}
-                {conversations.length === 0 && <div className={styles.emptyState}><MessageCircle size={22} /><p>When a visitor messages the site, their conversation will appear here.</p></div>}
+                {conversations.length === 0 && (
+                  <div className={styles.emptyState}>
+                    <MessageCircle size={22} />
+                    <p>
+                      When a visitor messages the site, their conversation will
+                      appear here.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -718,20 +1267,70 @@ export default function CmsWorkspace() {
               {selectedConversation ? (
                 <>
                   <div className={styles.chatPanelHead}>
-                    <div><span>Conversation with</span><h2>{selectedConversation.visitorName}</h2><p>{selectedConversation.visitorEmail || 'No email shared'} · Started {dateTime(selectedConversation.createdAt)}</p></div>
-                    <span className={`${styles.statusPill} ${selectedConversation.lastSenderType === 'visitor' ? styles.draft : styles.published}`}>{selectedConversation.lastSenderType === 'visitor' ? 'Awaiting reply' : 'Replied'}</span>
+                    <div>
+                      <span>Conversation with</span>
+                      <h2>{selectedConversation.visitorName}</h2>
+                      <p>
+                        {selectedConversation.visitorEmail || 'No email shared'}{' '}
+                        · Started {dateTime(selectedConversation.createdAt)}
+                      </p>
+                    </div>
+                    <span
+                      className={`${styles.statusPill} ${selectedConversation.lastSenderType === 'visitor' ? styles.draft : styles.published}`}
+                    >
+                      {selectedConversation.lastSenderType === 'visitor'
+                        ? 'Awaiting reply'
+                        : 'Replied'}
+                    </span>
                   </div>
                   <div className={styles.chatTranscript} aria-live="polite">
-                    {chatMessages.map((message) => <article key={message.id} className={message.senderType === 'admin' ? styles.adminMessage : styles.visitorMessage}><small>{message.senderType === 'admin' ? message.senderName : selectedConversation.visitorName} · {dateTime(message.createdAt)}</small><p>{message.body}</p></article>)}
+                    {chatMessages.map((message) => (
+                      <article
+                        key={message.id}
+                        className={
+                          message.senderType === 'admin'
+                            ? styles.adminMessage
+                            : styles.visitorMessage
+                        }
+                      >
+                        <small>
+                          {message.senderType === 'admin'
+                            ? message.senderName
+                            : selectedConversation.visitorName}{' '}
+                          · {dateTime(message.createdAt)}
+                        </small>
+                        <p>{message.body}</p>
+                      </article>
+                    ))}
                   </div>
-                  <form className={styles.replyComposer} onSubmit={replyToConversation}>
+                  <form
+                    className={styles.replyComposer}
+                    onSubmit={replyToConversation}
+                  >
                     <label htmlFor="cms-chat-reply">Reply to visitor</label>
-                    <textarea id="cms-chat-reply" value={chatDraft} onChange={(event) => setChatDraft(event.target.value)} maxLength={2000} placeholder="Write a helpful reply…" />
-                    <button className={styles.primaryButton} disabled={busy || !chatDraft.trim()}><Send size={16} /> Send reply</button>
+                    <textarea
+                      id="cms-chat-reply"
+                      value={chatDraft}
+                      onChange={(event) => setChatDraft(event.target.value)}
+                      maxLength={2000}
+                      placeholder="Write a helpful reply…"
+                    />
+                    <button
+                      className={styles.primaryButton}
+                      disabled={busy || !chatDraft.trim()}
+                    >
+                      <Send size={16} /> Send reply
+                    </button>
                   </form>
                 </>
               ) : (
-                <div className={styles.emptyState}><MessageCircle size={26} /><p>Select a conversation to read the exchange and reply as an administrator.</p></div>
+                <div className={styles.emptyState}>
+                  <MessageCircle size={26} />
+                  <p>
+                    Select a conversation to read the exchange and reply as an
+                    administrator.
+                  </p>
+                </div>
               )}
             </section>
           </section>
@@ -739,16 +1338,56 @@ export default function CmsWorkspace() {
 
         {view === 'team' && isAdmin && (
           <section className={styles.libraryPanel}>
-            <div className={styles.teamHead}><div><p className={styles.eyebrow}>Access control</p><h2>Roles set the boundary.</h2><p>Admins manage access, editors manage content, and viewers can inspect the workspace.</p></div><button className={styles.addButton} onClick={() => setShowMemberForm((current) => !current)}><Plus size={17} /> Add member</button></div>
-            {showMemberForm && <form className={styles.memberForm} onSubmit={addMember}>
-              <input name="displayName" placeholder="Name" required />
-              <input name="email" type="email" placeholder="Email" required />
-              <input name="password" type="password" minLength={12} placeholder="Temporary password (12+ characters)" required />
-              <select name="role" defaultValue="editor"><option value="editor">Editor</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
-              <button className={styles.primaryButton} disabled={busy}>Create account</button>
-            </form>}
+            <div className={styles.teamHead}>
+              <div>
+                <p className={styles.eyebrow}>Access control</p>
+                <h2>Roles set the boundary.</h2>
+                <p>
+                  Admins manage access, editors manage content, and viewers can
+                  inspect the workspace.
+                </p>
+              </div>
+              <button
+                className={styles.addButton}
+                onClick={() => setShowMemberForm((current) => !current)}
+              >
+                <Plus size={17} /> Add member
+              </button>
+            </div>
+            {showMemberForm && (
+              <form className={styles.memberForm} onSubmit={addMember}>
+                <input name="displayName" placeholder="Name" required />
+                <input name="email" type="email" placeholder="Email" required />
+                <input
+                  name="password"
+                  type="password"
+                  minLength={12}
+                  placeholder="Temporary password (12+ characters)"
+                  required
+                />
+                <select name="role" defaultValue="editor">
+                  <option value="editor">Editor</option>
+                  <option value="viewer">Viewer</option>
+                  <option value="admin">Admin</option>
+                </select>
+                <button className={styles.primaryButton} disabled={busy}>
+                  Create account
+                </button>
+              </form>
+            )}
             <div className={styles.teamList}>
-              {team.map((member) => <article key={member.id}><div className={styles.userMark}>{member.displayName.slice(0, 1).toUpperCase()}</div><div><strong>{member.displayName}</strong><span>{member.email}</span></div><em>{member.role}</em></article>)}
+              {team.map((member) => (
+                <article key={member.id}>
+                  <div className={styles.userMark}>
+                    {member.displayName.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div>
+                    <strong>{member.displayName}</strong>
+                    <span>{member.email}</span>
+                  </div>
+                  <em>{member.role}</em>
+                </article>
+              ))}
             </div>
           </section>
         )}
@@ -757,11 +1396,36 @@ export default function CmsWorkspace() {
   );
 }
 
-function Notice({ notice }: { notice: { tone: 'success' | 'error'; message: string } }) {
-  return <div className={`${styles.notice} ${notice.tone === 'success' ? styles.noticeSuccess : styles.noticeError}`}>{notice.tone === 'success' ? <CircleCheck size={17} /> : <CircleAlert size={17} />}{notice.message}</div>;
+function Notice({
+  notice,
+}: {
+  notice: { tone: 'success' | 'error'; message: string };
+}) {
+  return (
+    <div
+      className={`${styles.notice} ${notice.tone === 'success' ? styles.noticeSuccess : styles.noticeError}`}
+    >
+      {notice.tone === 'success' ? (
+        <CircleCheck size={17} />
+      ) : (
+        <CircleAlert size={17} />
+      )}
+      {notice.message}
+    </div>
+  );
 }
 
-function BootstrapForm({ api, onAuthenticated }: { api: <T>(path: string, options?: RequestInit, overrideToken?: string) => Promise<T>; onAuthenticated: (result: { token: string; user: CmsUser }) => void }) {
+function BootstrapForm({
+  api,
+  onAuthenticated,
+}: {
+  api: <T>(
+    path: string,
+    options?: RequestInit,
+    overrideToken?: string,
+  ) => Promise<T>;
+  onAuthenticated: (result: { token: string; user: CmsUser }) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -770,18 +1434,76 @@ function BootstrapForm({ api, onAuthenticated }: { api: <T>(path: string, option
     setBusy(true);
     setError('');
     try {
-      const result = await api<{ token: string; user: CmsUser }>('/v1/admin/bootstrap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ setupToken: form.get('setupToken'), displayName: form.get('displayName'), email: form.get('email'), password: form.get('password') }) });
+      const result = await api<{ token: string; user: CmsUser }>(
+        '/v1/admin/bootstrap',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            setupToken: form.get('setupToken'),
+            displayName: form.get('displayName'),
+            email: form.get('email'),
+            password: form.get('password'),
+          }),
+        },
+      );
       onAuthenticated(result);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not create the first administrator.');
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : 'Could not create the first administrator.',
+      );
     } finally {
       setBusy(false);
     }
   };
-  return <form className={styles.authForm} onSubmit={submit}><div><p className={styles.eyebrow}>First-time setup</p><h2>Create the first administrator</h2><p>The one-time setup token is never saved in the browser.</p></div><input name="displayName" placeholder="Your name" required /><input name="email" type="email" placeholder="Work email" required /><input name="password" type="password" minLength={12} placeholder="Create a password (12+ characters)" required /><input name="setupToken" type="password" placeholder="One-time setup token" required />{error && <Notice notice={{ tone: 'error', message: error }} />}<button className={styles.primaryButton} disabled={busy}>{busy ? <LoaderCircle size={17} className={styles.spin} /> : <ShieldCheck size={17} />} Create secure workspace</button></form>;
+  return (
+    <form className={styles.authForm} onSubmit={submit}>
+      <div>
+        <p className={styles.eyebrow}>First-time setup</p>
+        <h2>Create the first administrator</h2>
+        <p>The one-time setup token is never saved in the browser.</p>
+      </div>
+      <input name="displayName" placeholder="Your name" required />
+      <input name="email" type="email" placeholder="Work email" required />
+      <input
+        name="password"
+        type="password"
+        minLength={12}
+        placeholder="Create a password (12+ characters)"
+        required
+      />
+      <input
+        name="setupToken"
+        type="password"
+        placeholder="One-time setup token"
+        required
+      />
+      {error && <Notice notice={{ tone: 'error', message: error }} />}
+      <button className={styles.primaryButton} disabled={busy}>
+        {busy ? (
+          <LoaderCircle size={17} className={styles.spin} />
+        ) : (
+          <ShieldCheck size={17} />
+        )}{' '}
+        Create secure workspace
+      </button>
+    </form>
+  );
 }
 
-function LoginForm({ api, onAuthenticated }: { api: <T>(path: string, options?: RequestInit, overrideToken?: string) => Promise<T>; onAuthenticated: (result: { token: string; user: CmsUser }) => void }) {
+function LoginForm({
+  api,
+  onAuthenticated,
+}: {
+  api: <T>(
+    path: string,
+    options?: RequestInit,
+    overrideToken?: string,
+  ) => Promise<T>;
+  onAuthenticated: (result: { token: string; user: CmsUser }) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const submit = async (event: SubmitEvent<HTMLFormElement>) => {
@@ -790,7 +1512,17 @@ function LoginForm({ api, onAuthenticated }: { api: <T>(path: string, options?: 
     setBusy(true);
     setError('');
     try {
-      const result = await api<{ token: string; user: CmsUser }>('/v1/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.get('email'), password: form.get('password') }) });
+      const result = await api<{ token: string; user: CmsUser }>(
+        '/v1/admin/login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: form.get('email'),
+            password: form.get('password'),
+          }),
+        },
+      );
       onAuthenticated(result);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not sign in.');
@@ -798,5 +1530,36 @@ function LoginForm({ api, onAuthenticated }: { api: <T>(path: string, options?: 
       setBusy(false);
     }
   };
-  return <form className={styles.authForm} onSubmit={submit}><div><p className={styles.eyebrow}>Welcome back</p><h2>Sign in to Content Studio</h2><p>Your session remains only in this browser tab.</p></div><input name="email" type="email" placeholder="Work email" autoComplete="email" required /><input name="password" type="password" placeholder="Password" autoComplete="current-password" required />{error && <Notice notice={{ tone: 'error', message: error }} />}<button className={styles.primaryButton} disabled={busy}>{busy ? <LoaderCircle size={17} className={styles.spin} /> : <ShieldCheck size={17} />} Sign in securely</button></form>;
+  return (
+    <form className={styles.authForm} onSubmit={submit}>
+      <div>
+        <p className={styles.eyebrow}>Welcome back</p>
+        <h2>Sign in to Content Studio</h2>
+        <p>Your session remains only in this browser tab.</p>
+      </div>
+      <input
+        name="email"
+        type="email"
+        placeholder="Work email"
+        autoComplete="email"
+        required
+      />
+      <input
+        name="password"
+        type="password"
+        placeholder="Password"
+        autoComplete="current-password"
+        required
+      />
+      {error && <Notice notice={{ tone: 'error', message: error }} />}
+      <button className={styles.primaryButton} disabled={busy}>
+        {busy ? (
+          <LoaderCircle size={17} className={styles.spin} />
+        ) : (
+          <ShieldCheck size={17} />
+        )}{' '}
+        Sign in securely
+      </button>
+    </form>
+  );
 }

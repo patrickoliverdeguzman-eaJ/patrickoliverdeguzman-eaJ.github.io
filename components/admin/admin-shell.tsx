@@ -13,7 +13,10 @@ interface AuthUser {
   role: string;
 }
 
-type ShellState = { status: 'checking' } | { status: 'login' } | { status: 'app' };
+type ShellState =
+  | { status: 'checking' }
+  | { status: 'login' }
+  | { status: 'app' };
 
 function isLoginPath(pathname: string): boolean {
   return pathname === adminPath('/admin/login') || pathname === '/admin/login/';
@@ -39,6 +42,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       let token: string | null = null;
       try {
         token = localStorage.getItem('cms_token');
+        if (!token) {
+          token = sessionStorage.getItem('infostorage.cms.session-token');
+          if (token) localStorage.setItem('cms_token', token);
+        }
       } catch {
         token = null;
       }
@@ -89,7 +96,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   if (state.status === 'checking') {
     return (
-      <div style={{ display: 'grid', placeItems: 'center', height: '100vh', background: '#f6e9ef' }}>
+      <div
+        style={{
+          display: 'grid',
+          placeItems: 'center',
+          height: '100vh',
+          background: '#f6e9ef',
+        }}
+      >
         <div className="admin-card" style={{ textAlign: 'center' }}>
           <p>Loading CMS…</p>
         </div>
