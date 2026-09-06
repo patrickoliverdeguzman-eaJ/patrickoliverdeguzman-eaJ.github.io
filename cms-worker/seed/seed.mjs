@@ -7,6 +7,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createMigratedPageDocuments } from './builder-pages.mjs';
 
 const api = (process.env.CMS_API_URL ?? 'http://127.0.0.1:8787').replace(/\/+$/, '');
 const email = process.env.CMS_EMAIL ?? '';
@@ -37,6 +38,10 @@ async function apiJson(pathname, { method = 'GET', token, body } = {}) {
 
 const seedPath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'site-content.json');
 const seed = JSON.parse(await readFile(seedPath, 'utf8'));
+const entries = [
+  ...seed.documents.filter((entry) => !(entry.type === 'builder_page' && (entry.slug === 'home' || entry.slug === 'partners'))),
+  ...createMigratedPageDocuments(seed.documents),
+];
 
 const { token } = await apiJson('/v1/admin/login', { method: 'POST', body: { email, password } });
 console.log(`Signed in as ${email}`);
@@ -44,7 +49,7 @@ console.log(`Signed in as ${email}`);
 let created = 0;
 let updated = 0;
 let published = 0;
-for (const entry of seed.documents) {
+for (const entry of entries) {
   let id = null;
   try {
     const out = await apiJson('/v1/admin/documents', {

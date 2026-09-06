@@ -11,6 +11,7 @@ export const BUILDER_NODE_TYPES = [
   'divider',
   'spacer',
   'brand_hero',
+  'home_intro',
   'split_intro',
   'principle_grid',
   'solution_grid',
@@ -21,6 +22,7 @@ export const BUILDER_NODE_TYPES = [
   'partner_directory',
   'logo_grid',
   'method_list',
+  'partner_contact',
 ] as const;
 
 export type BuilderNodeType = (typeof BUILDER_NODE_TYPES)[number];
@@ -38,13 +40,13 @@ export type BuilderNode = {
   props: Record<string, string | number | boolean>;
   styles: {
     tone: 'default' | 'muted' | 'brand' | 'gradient';
-    padding: 'compact' | 'regular' | 'spacious';
-    align: 'left' | 'center' | 'right';
-    width: 'content' | 'wide' | 'full';
+    padding: 'inherit' | 'compact' | 'regular' | 'spacious';
+    align: 'inherit' | 'left' | 'center' | 'right';
+    width: 'inherit' | 'content' | 'wide' | 'full';
     radius: 'none' | 'sm' | 'md' | 'lg';
     border: 'none' | 'soft' | 'strong';
     shadow: 'none' | 'soft' | 'lifted';
-    gap: 'compact' | 'regular' | 'spacious';
+    gap: 'inherit' | 'compact' | 'regular' | 'spacious';
     motion: 'none' | 'reveal' | 'float';
     hover: 'none' | 'lift';
   };
@@ -206,6 +208,7 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
       break;
     case 'brand_hero':
       node.props = {
+        variant: 'home',
         eyebrow: 'Premium solutions integrator',
         title: 'Enterprise-class solutions for',
         accent: 'what comes next.',
@@ -215,8 +218,20 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         secondaryLabel: 'Talk to an expert',
         secondaryHref: '#contact',
         logo: '/infostorage-logo.png',
+        capabilities: 'Systems & platforms\nNetwork & security\nData protection\nIVAS',
       };
       node.styles = { ...defaultStyles, tone: 'gradient', padding: 'spacious', width: 'full', motion: 'reveal' };
+      break;
+    case 'home_intro':
+      node.props = {
+        kicker: 'The INFOStorage difference',
+        heading: 'Manage your data',
+        accent: 'more efficiently.',
+        body: 'Use the established editorial introduction and principle grid for a concise positioning statement.',
+        linkLabel: 'Explore IVAS',
+        linkHref: '#services',
+        items: 'Specialized|Focused expertise across a chosen set of enterprise IT solutions.\nRecognized|A commitment to deliver on the work we take on with every client.\nRespected|Professional service delivered with integrity from planning through support.',
+      };
       break;
     case 'split_intro':
       node.props = {
@@ -311,6 +326,16 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
       };
       node.styles = { ...defaultStyles, tone: 'muted', padding: 'spacious', width: 'wide' };
       break;
+    case 'partner_contact':
+      node.props = {
+        eyebrow: 'Find the right fit',
+        heading: 'Let’s match the technology to the work ahead.',
+        body: 'Bring us the challenge. We will help you turn it into an integrated, practical next step.',
+        ctaLabel: 'Start a conversation',
+        ctaHref: '/#contact',
+      };
+      node.styles = { ...defaultStyles, tone: 'brand', padding: 'spacious', width: 'full' };
+      break;
   }
   return node;
 }
@@ -384,17 +409,17 @@ function normaliseNode(
         value.styles && isRecord(value.styles)
           ? value.styles.padding
           : undefined,
-        ['compact', 'regular', 'spacious'] as const,
+        ['inherit', 'compact', 'regular', 'spacious'] as const,
         'regular',
       ),
       align: safeChoice(
         value.styles && isRecord(value.styles) ? value.styles.align : undefined,
-        ['left', 'center', 'right'] as const,
+        ['inherit', 'left', 'center', 'right'] as const,
         'left',
       ),
       width: safeChoice(
         value.styles && isRecord(value.styles) ? value.styles.width : undefined,
-        ['content', 'wide', 'full'] as const,
+        ['inherit', 'content', 'wide', 'full'] as const,
         'content',
       ),
       radius: safeChoice(
@@ -414,7 +439,7 @@ function normaliseNode(
       ),
       gap: safeChoice(
         value.styles && isRecord(value.styles) ? value.styles.gap : undefined,
-        ['compact', 'regular', 'spacious'] as const,
+        ['inherit', 'compact', 'regular', 'spacious'] as const,
         'regular',
       ),
       motion: safeChoice(

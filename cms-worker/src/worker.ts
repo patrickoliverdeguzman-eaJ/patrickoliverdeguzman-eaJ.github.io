@@ -94,6 +94,7 @@ const BUILDER_NODE_TYPES = new Set([
   'image', 'button', 'divider', 'spacer', 'brand_hero', 'split_intro',
   'principle_grid', 'solution_grid', 'continuity_panel', 'service_list',
   'tag_band', 'contact_panel', 'partner_directory', 'logo_grid', 'method_list',
+  'home_intro', 'partner_contact',
 ]);
 const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
   section: new Set(['label']),
@@ -107,7 +108,8 @@ const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
   button: new Set(['label', 'href', 'variant']),
   divider: new Set(['label']),
   spacer: new Set(['size']),
-  brand_hero: new Set(['eyebrow', 'title', 'accent', 'body', 'primaryLabel', 'primaryHref', 'secondaryLabel', 'secondaryHref', 'logo']),
+  brand_hero: new Set(['variant', 'eyebrow', 'title', 'accent', 'body', 'primaryLabel', 'primaryHref', 'secondaryLabel', 'secondaryHref', 'logo', 'capabilities']),
+  home_intro: new Set(['kicker', 'heading', 'accent', 'body', 'linkLabel', 'linkHref', 'items']),
   split_intro: new Set(['kicker', 'heading', 'accent', 'body', 'linkLabel', 'linkHref']),
   principle_grid: new Set(['items']),
   solution_grid: new Set(['kicker', 'heading', 'body', 'items']),
@@ -118,6 +120,7 @@ const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
   partner_directory: new Set(['kicker', 'heading', 'body', 'note', 'items']),
   logo_grid: new Set(['kicker', 'heading', 'body', 'items']),
   method_list: new Set(['kicker', 'heading', 'items']),
+  partner_contact: new Set(['eyebrow', 'heading', 'body', 'ctaLabel', 'ctaHref']),
 };
 const BUILDER_CONTAINER_TYPES = new Set([
   'section', 'container', 'columns', 'column', 'card',
@@ -245,7 +248,7 @@ function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): v
   if (type === 'button' && value.props.variant !== undefined && !['primary', 'secondary'].includes(value.props.variant as string)) throw new HttpError(400, 'A button variant is invalid.', 'invalid_input');
   if (type === 'spacer' && value.props.size !== undefined && !['compact', 'regular', 'spacious'].includes(value.props.size as string)) throw new HttpError(400, 'A spacer size is invalid.', 'invalid_input');
   if (!isRecord(value.styles) || !isRecord(value.responsive)) throw new HttpError(400, 'Builder styles are invalid.', 'invalid_input');
-  if (!['default', 'muted', 'brand', 'gradient'].includes(value.styles.tone as string) || !['compact', 'regular', 'spacious'].includes(value.styles.padding as string) || !['left', 'center', 'right'].includes(value.styles.align as string) || !['content', 'wide', 'full'].includes(value.styles.width as string) || !['none', 'sm', 'md', 'lg'].includes(value.styles.radius as string) || !['none', 'soft', 'strong'].includes(value.styles.border as string) || !['none', 'soft', 'lifted'].includes(value.styles.shadow as string) || !['compact', 'regular', 'spacious'].includes(value.styles.gap as string) || !['none', 'reveal', 'float'].includes(value.styles.motion as string) || !['none', 'lift'].includes(value.styles.hover as string) || !['all', 'desktop', 'mobile'].includes(value.responsive.visibility as string) || !['inherit', 1, 2, 3, 4].includes(value.responsive.tabletColumns as string | number) || !['inherit', 1, 2, 3, 4].includes(value.responsive.mobileColumns as string | number) || !['inherit', 'left', 'center', 'right'].includes(value.responsive.tabletAlign as string) || !['inherit', 'left', 'center', 'right'].includes(value.responsive.mobileAlign as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.responsive.tabletPadding as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.responsive.mobilePadding as string)) throw new HttpError(400, 'A builder layout setting is not supported.', 'invalid_input');
+  if (!['default', 'muted', 'brand', 'gradient'].includes(value.styles.tone as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.styles.padding as string) || !['inherit', 'left', 'center', 'right'].includes(value.styles.align as string) || !['inherit', 'content', 'wide', 'full'].includes(value.styles.width as string) || !['none', 'sm', 'md', 'lg'].includes(value.styles.radius as string) || !['none', 'soft', 'strong'].includes(value.styles.border as string) || !['none', 'soft', 'lifted'].includes(value.styles.shadow as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.styles.gap as string) || !['none', 'reveal', 'float'].includes(value.styles.motion as string) || !['none', 'lift'].includes(value.styles.hover as string) || !['all', 'desktop', 'mobile'].includes(value.responsive.visibility as string) || !['inherit', 1, 2, 3, 4].includes(value.responsive.tabletColumns as string | number) || !['inherit', 1, 2, 3, 4].includes(value.responsive.mobileColumns as string | number) || !['inherit', 'left', 'center', 'right'].includes(value.responsive.tabletAlign as string) || !['inherit', 'left', 'center', 'right'].includes(value.responsive.mobileAlign as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.responsive.tabletPadding as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.responsive.mobilePadding as string)) throw new HttpError(400, 'A builder layout setting is not supported.', 'invalid_input');
   if (!Array.isArray(value.children) || value.children.length > 30) throw new HttpError(400, 'Builder block children are invalid.', 'invalid_input');
   if (!BUILDER_CONTAINER_TYPES.has(type) && value.children.length > 0) throw new HttpError(400, 'This builder block cannot contain child blocks.', 'invalid_input');
   for (const child of value.children) validateBuilderNode(child, depth + 1, ids);

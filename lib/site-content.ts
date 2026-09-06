@@ -1,5 +1,5 @@
 import { CMS_API } from './cms-api';
-import { normaliseBuilderPage, type BuilderPage } from './page-builder';
+import { hasBuilderContent, normaliseBuilderPage, type BuilderNode, type BuilderNodeType, type BuilderPage } from './page-builder';
 
 // Content layer for the public site.
 //
@@ -118,22 +118,12 @@ interface PublishedDoc {
   order?: number;
 }
 
-interface ContentListResponse {
-  documents: PublishedDoc[];
-}
-
 interface ContentDocResponse {
   document: PublishedDoc;
 }
 
 function str(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
-}
-
-function strArray(value: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(value)) return fallback;
-  const cleaned = value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
-  return cleaned.length ? cleaned : fallback;
 }
 
 async function fetchJson<T>(path: string): Promise<T | null> {
@@ -148,11 +138,6 @@ async function fetchJson<T>(path: string): Promise<T | null> {
   } finally {
     window.clearTimeout(timer);
   }
-}
-
-export async function fetchPublishedList(type: string): Promise<PublishedDoc[]> {
-  const data = await fetchJson<ContentListResponse>(`/v1/content?type=${encodeURIComponent(type)}`);
-  return data?.documents ?? [];
 }
 
 export async function fetchPublishedDoc(type: string, slug: string): Promise<Record<string, unknown> | null> {
@@ -402,6 +387,94 @@ export const DEFAULT_PARTNERS: PartnersContent = {
   },
 };
 
+const migratedBlockStyles: BuilderNode['styles'] = {
+  tone: 'default',
+  padding: 'inherit',
+  align: 'inherit',
+  width: 'inherit',
+  radius: 'none',
+  border: 'none',
+  shadow: 'none',
+  gap: 'inherit',
+  motion: 'none',
+  hover: 'none',
+};
+
+const migratedBlockResponsive: BuilderNode['responsive'] = {
+  visibility: 'all',
+  tabletColumns: 'inherit',
+  mobileColumns: 'inherit',
+  tabletAlign: 'inherit',
+  mobileAlign: 'inherit',
+  tabletPadding: 'inherit',
+  mobilePadding: 'inherit',
+};
+
+function migratedBlock(id: string, type: BuilderNodeType, props: BuilderNode['props']): BuilderNode {
+  return { id, type, props, styles: { ...migratedBlockStyles }, responsive: { ...migratedBlockResponsive }, children: [] };
+}
+
+/** The CMS migration blueprint for the original homepage. It deliberately uses
+ * the same visual component blocks as every new CMS page, not legacy JSX. */
+export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): BuilderPage {
+  return {
+    version: 1,
+    slots: {
+      afterHero: [migratedBlock('home-hero', 'brand_hero', {
+        variant: 'home', eyebrow: content.hero.eyebrow, title: content.hero.titleA, accent: content.hero.titleAccent,
+        body: content.hero.description, primaryLabel: content.hero.primaryLabel, primaryHref: content.hero.primaryHref,
+        secondaryLabel: content.hero.secondaryLabel, secondaryHref: content.hero.secondaryHref, logo: content.site.logo,
+        capabilities: 'Systems & platforms\nNetwork & security\nData protection\nIVAS',
+      })],
+      afterApproach: [migratedBlock('home-intro', 'home_intro', {
+        kicker: content.approach.kicker, heading: content.approach.headingA, accent: content.approach.headingAccent,
+        body: content.approach.body, linkLabel: content.approach.linkLabel, linkHref: content.approach.linkHref,
+        items: content.approach.principles.map((item) => `${item.title}|${item.text}`).join('\n'),
+      })],
+      afterSolutions: [migratedBlock('home-solutions', 'solution_grid', {
+        kicker: content.solutionsHeading.kicker, heading: content.solutionsHeading.heading, body: content.solutionsHeading.body,
+        items: content.solutions.map((item) => `${item.title}|${item.description}|${item.items.join(';')}`).join('\n'),
+      })],
+      afterServices: [
+        migratedBlock('home-continuity', 'continuity_panel', { eyebrow: content.continuity.eyebrow, heading: content.continuity.heading, body: content.continuity.body, ctaLabel: content.continuity.ctaLabel, ctaHref: content.continuity.ctaHref }),
+        migratedBlock('home-services', 'service_list', { kicker: content.servicesHead.kicker, heading: content.servicesHead.heading, body: content.servicesHead.body, items: content.services.join('\n'), href: '#contact' }),
+      ],
+      beforeContact: [migratedBlock('home-sectors', 'tag_band', { kicker: content.sectors.kicker, heading: content.sectors.heading, tags: content.sectors.tags.join('\n') })],
+      afterContent: [migratedBlock('home-contact', 'contact_panel', { eyebrow: content.contact.eyebrow, heading: content.contact.heading, body: content.contact.body })],
+    },
+  };
+}
+
+/** The CMS migration blueprint for the original Partners page. */
+export function createPartnersBuilderPage(content: PartnersContent = DEFAULT_PARTNERS): BuilderPage {
+  return {
+    version: 1,
+    slots: {
+      afterHero: [migratedBlock('partners-hero', 'brand_hero', {
+        variant: 'partners', eyebrow: content.hero.eyebrow, title: content.hero.titleA, accent: content.hero.titleAccent,
+        body: content.hero.description, primaryLabel: content.hero.ctaLabel, primaryHref: content.hero.ctaHref, logo: content.site.logo,
+      })],
+      afterApproach: [migratedBlock('partners-directory', 'partner_directory', {
+        kicker: content.directory.kicker, heading: content.directory.heading, body: content.directory.body, note: content.directory.note,
+        items: content.partners.map((item) => `${item.name}|${item.focus}`).join('\n'),
+      })],
+      afterSolutions: [migratedBlock('partners-clients', 'logo_grid', {
+        kicker: content.clientsHead.kicker, heading: content.clientsHead.heading, body: content.clientsHead.body,
+        items: content.clients.map((item) => `${item.name}|${item.logo}|${item.logoClass}`).join('\n'),
+      })],
+      afterServices: [migratedBlock('partners-method', 'method_list', {
+        kicker: 'More than product selection', heading: 'The value is in the connection.',
+        items: 'Context first|Start with the workload, risk, and operating reality—not a catalogue.\nIntegrated design|Bring the right technologies into an architecture that makes sense together.\nLocal stewardship|Stay close through implementation, operational handover, and ongoing support.',
+      })],
+      beforeContact: [],
+      afterContent: [migratedBlock('partners-contact', 'partner_contact', {
+        eyebrow: 'Find the right fit', heading: 'Let’s match the technology to the work ahead.',
+        body: 'Bring us the challenge. We will help you turn it into an integrated, practical next step.', ctaLabel: 'Start a conversation', ctaHref: '/#contact',
+      })],
+    },
+  };
+}
+
 function navFromDoc(data: Record<string, unknown> | null): NavItem[] | null {
   if (!data || !Array.isArray(data.items) || data.items.length === 0) return null;
   const items = (data.items as Array<Record<string, unknown>>)
@@ -430,23 +503,17 @@ function siteFromDoc(data: Record<string, unknown> | null): Partial<HomeContent[
 export async function loadHomeContent(): Promise<HomeContent> {
   const content: HomeContent = structuredClone(DEFAULT_HOME);
   try {
-    const [settings, nav, hero, approach, solHead, continuity, svcHead, sectors, contact, solutions, services, builder] =
+    const [settings, nav, builder] =
       await Promise.all([
         fetchPublishedDoc('site_settings', 'global'),
         fetchPublishedDoc('navigation', 'main'),
-        fetchPublishedDoc('home_section', 'hero'),
-        fetchPublishedDoc('home_section', 'approach'),
-        fetchPublishedDoc('home_section', 'solutions-heading'),
-        fetchPublishedDoc('home_section', 'continuity'),
-        fetchPublishedDoc('home_section', 'services-heading'),
-        fetchPublishedDoc('home_section', 'sectors'),
-        fetchPublishedDoc('home_section', 'contact'),
-        fetchPublishedList('solution'),
-        fetchPublishedList('service'),
         fetchPublishedDoc('builder_page', 'home'),
       ]);
 
-    if (builder) content.builder = normaliseBuilderPage(builder);
+    if (builder) {
+      const managedPage = normaliseBuilderPage(builder);
+      if (hasBuilderContent(managedPage)) content.builder = managedPage;
+    }
 
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
@@ -461,108 +528,27 @@ export async function loadHomeContent(): Promise<HomeContent> {
     content.design = designSystemFromDoc(settings?.design);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, v]) => v !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
-
-    if (hero) {
-      content.hero = {
-        eyebrow: str(hero.eyebrow, content.hero.eyebrow),
-        titleA: str(hero.titleA, content.hero.titleA),
-        titleAccent: str(hero.titleAccent, content.hero.titleAccent),
-        description: str(hero.description, content.hero.description),
-        primaryLabel: str(hero.primaryLabel, content.hero.primaryLabel),
-        primaryHref: str(hero.primaryHref, content.hero.primaryHref),
-        secondaryLabel: str(hero.secondaryLabel, content.hero.secondaryLabel),
-        secondaryHref: str(hero.secondaryHref, content.hero.secondaryHref),
-      };
-    }
-    if (approach) {
-      content.approach = {
-        kicker: str(approach.kicker, content.approach.kicker),
-        headingA: str(approach.headingA, content.approach.headingA),
-        headingAccent: str(approach.headingAccent, content.approach.headingAccent),
-        body: str(approach.body, content.approach.body),
-        linkLabel: str(approach.linkLabel, content.approach.linkLabel),
-        linkHref: str(approach.linkHref, content.approach.linkHref),
-        principles: content.approach.principles,
-      };
-      if (Array.isArray(approach.principles) && approach.principles.length > 0) {
-        content.approach.principles = (approach.principles as Array<Record<string, unknown>>).map((p, i) => ({
-          n: str(p.n, content.approach.principles[i]?.n ?? String(i + 1).padStart(2, '0')),
-          title: str(p.title, content.approach.principles[i]?.title ?? ''),
-          text: str(p.text, content.approach.principles[i]?.text ?? ''),
-        }));
-      }
-    }
-    if (solHead) {
-      content.solutionsHeading = {
-        kicker: str(solHead.kicker, content.solutionsHeading.kicker),
-        heading: str(solHead.heading, content.solutionsHeading.heading),
-        body: str(solHead.body, content.solutionsHeading.body),
-      };
-    }
-    if (continuity) {
-      content.continuity = {
-        eyebrow: str(continuity.eyebrow, content.continuity.eyebrow),
-        heading: str(continuity.heading, content.continuity.heading),
-        body: str(continuity.body, content.continuity.body),
-        ctaLabel: str(continuity.ctaLabel, content.continuity.ctaLabel),
-        ctaHref: str(continuity.ctaHref, content.continuity.ctaHref),
-      };
-    }
-    if (svcHead) {
-      content.servicesHead = {
-        kicker: str(svcHead.kicker, content.servicesHead.kicker),
-        heading: str(svcHead.heading, content.servicesHead.heading),
-        body: str(svcHead.body, content.servicesHead.body),
-      };
-    }
-    if (sectors) {
-      content.sectors = {
-        kicker: str(sectors.kicker, content.sectors.kicker),
-        heading: str(sectors.heading, content.sectors.heading),
-        tags: strArray(sectors.tags, content.sectors.tags),
-      };
-    }
-    if (contact) {
-      content.contact = {
-        eyebrow: str(contact.eyebrow, content.contact.eyebrow),
-        heading: str(contact.heading, content.contact.heading),
-        body: str(contact.body, content.contact.body),
-      };
-    }
-    if (solutions.length > 0) {
-      content.solutions = solutions.map((doc) => ({
-        title: doc.title,
-        description: str(doc.data.description, ''),
-        items: strArray(doc.data.items, []),
-      }));
-    }
-    if (services.length > 0) {
-      content.services = services.map((doc) => doc.title);
-    }
   } catch {
     // Fall back to defaults; the page must never break.
   }
+  // The fallback exists only for an unavailable CMS. Published CMS page data
+  // always wins above; the public renderer never composes the former JSX page.
+  content.builder ??= createHomeBuilderPage(content);
   return content;
 }
-
-const CLIENT_LOGO_CLASS_FALLBACK: Record<string, string> = Object.fromEntries(
-  DEFAULT_CLIENT_LIST.filter((c) => c.logoClass).map((c) => [c.name, c.logoClass]),
-);
 
 export async function loadPartnersContent(): Promise<PartnersContent> {
   const content: PartnersContent = structuredClone(DEFAULT_PARTNERS);
   try {
-    const [settings, nav, partners, clients, hero, directory, clientsHead, builder] = await Promise.all([
+    const [settings, nav, builder] = await Promise.all([
       fetchPublishedDoc('site_settings', 'global'),
       fetchPublishedDoc('navigation', 'main'),
-      fetchPublishedList('partner'),
-      fetchPublishedList('client'),
-      fetchPublishedDoc('page_section', 'partners-hero'),
-      fetchPublishedDoc('page_section', 'partners-directory'),
-      fetchPublishedDoc('page_section', 'partners-clients'),
       fetchPublishedDoc('builder_page', 'partners'),
     ]);
-    if (builder) content.builder = normaliseBuilderPage(builder);
+    if (builder) {
+      const managedPage = normaliseBuilderPage(builder);
+      if (hasBuilderContent(managedPage)) content.builder = managedPage;
+    }
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
     if (nav) {
@@ -575,48 +561,9 @@ export async function loadPartnersContent(): Promise<PartnersContent> {
     content.design = designSystemFromDoc(settings?.design);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, value]) => value !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
-    if (partners.length > 0) {
-      content.partners = partners.map((doc) => ({
-        name: doc.title,
-        focus: str(doc.data.focus, ''),
-        website: str(doc.data.website, ''),
-      }));
-    }
-    if (clients.length > 0) {
-      content.clients = clients.map((doc) => ({
-        name: doc.title,
-        logo: str(doc.data.logo, ''),
-        website: str(doc.data.website, ''),
-        logoClass: CLIENT_LOGO_CLASS_FALLBACK[doc.title] ?? '',
-      }));
-    }
-    if (hero) {
-      content.hero = {
-        eyebrow: str(hero.eyebrow, content.hero.eyebrow),
-        titleA: str(hero.titleA, content.hero.titleA),
-        titleAccent: str(hero.titleAccent, content.hero.titleAccent),
-        description: str(hero.description, content.hero.description),
-        ctaLabel: str(hero.ctaLabel, content.hero.ctaLabel),
-        ctaHref: str(hero.ctaHref, content.hero.ctaHref),
-      };
-    }
-    if (directory) {
-      content.directory = {
-        kicker: str(directory.kicker, content.directory.kicker),
-        heading: str(directory.heading, content.directory.heading),
-        body: str(directory.body, content.directory.body),
-        note: str(directory.note, content.directory.note),
-      };
-    }
-    if (clientsHead) {
-      content.clientsHead = {
-        kicker: str(clientsHead.kicker, content.clientsHead.kicker),
-        heading: str(clientsHead.heading, content.clientsHead.heading),
-        body: str(clientsHead.body, content.clientsHead.body),
-      };
-    }
   } catch {
     // Fall back to defaults.
   }
+  content.builder ??= createPartnersBuilderPage(content);
   return content;
 }

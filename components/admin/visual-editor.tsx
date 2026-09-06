@@ -27,6 +27,7 @@ import {
 import { CMS_API } from '@/lib/cms-api';
 import { adminPath } from '@/lib/site-paths';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
+import { CmsSitePage } from '@/components/cms-site-page';
 import {
   appendBuilderNode,
   BUILDER_NODE_TYPES,
@@ -49,6 +50,9 @@ import {
   DEFAULT_HOME,
   DEFAULT_DESIGN_SYSTEM,
   DEFAULT_PARTNERS,
+  createHomeBuilderPage,
+  createPartnersBuilderPage,
+  designVariables,
   designSystemFromDoc,
   type ClientContent,
   type DesignSystem,
@@ -89,108 +93,12 @@ type Layer = {
 
 const PAGE_LAYERS: Record<PageKey, Layer[]> = {
   home: [
-    {
-      id: 'global',
-      label: 'Global header & footer',
-      type: 'site_settings',
-      slug: 'global',
-      locked: true,
-    },
-    {
-      id: 'navigation',
-      label: 'Navigation',
-      type: 'navigation',
-      slug: 'main',
-    },
-    { id: 'hero', label: 'Hero', type: 'home_section', slug: 'hero' },
-    {
-      id: 'approach',
-      label: 'INFOStorage difference',
-      type: 'home_section',
-      slug: 'approach',
-    },
-    {
-      id: 'solutions-heading',
-      label: 'Solutions heading',
-      type: 'home_section',
-      slug: 'solutions-heading',
-    },
-    {
-      id: 'solutions',
-      label: 'Solution cards',
-      type: 'solution',
-      repeating: true,
-    },
-    {
-      id: 'continuity',
-      label: 'Data protection',
-      type: 'home_section',
-      slug: 'continuity',
-    },
-    {
-      id: 'services-heading',
-      label: 'Services heading',
-      type: 'home_section',
-      slug: 'services-heading',
-    },
-    { id: 'services', label: 'Service rows', type: 'service', repeating: true },
-    {
-      id: 'sectors',
-      label: 'Industries',
-      type: 'home_section',
-      slug: 'sectors',
-    },
-    {
-      id: 'contact',
-      label: 'Contact CTA',
-      type: 'home_section',
-      slug: 'contact',
-    },
+    { id: 'global', label: 'Global header & footer', type: 'site_settings', slug: 'global', locked: true },
+    { id: 'navigation', label: 'Navigation', type: 'navigation', slug: 'main' },
   ],
   partners: [
-    {
-      id: 'global',
-      label: 'Global header & footer',
-      type: 'site_settings',
-      slug: 'global',
-      locked: true,
-    },
-    {
-      id: 'navigation',
-      label: 'Navigation',
-      type: 'navigation',
-      slug: 'main',
-    },
-    {
-      id: 'partners-hero',
-      label: 'Partners hero',
-      type: 'page_section',
-      slug: 'partners-hero',
-    },
-    {
-      id: 'partners-directory',
-      label: 'Technology partners heading',
-      type: 'page_section',
-      slug: 'partners-directory',
-    },
-    {
-      id: 'partners',
-      label: 'Technology partner cards',
-      type: 'partner',
-      repeating: true,
-    },
-    {
-      id: 'partners-clients',
-      label: 'Valued clients heading',
-      type: 'page_section',
-      slug: 'partners-clients',
-    },
-    {
-      id: 'clients',
-      label: 'Valued client logos',
-      type: 'client',
-      repeating: true,
-    },
+    { id: 'global', label: 'Global header & footer', type: 'site_settings', slug: 'global', locked: true },
+    { id: 'navigation', label: 'Navigation', type: 'navigation', slug: 'main' },
   ],
 };
 
@@ -203,6 +111,7 @@ const DEFAULT_DATA: Record<string, Record<string, unknown>> = {
 
 const DESIGN_BLOCKS: Array<{ type: BuilderNodeType; label: string; Icon: typeof Box }> = [
   { type: 'brand_hero', label: 'Brand hero', Icon: Layers3 },
+  { type: 'home_intro', label: 'Editorial intro', Icon: Text },
   { type: 'split_intro', label: 'Split introduction', Icon: Text },
   { type: 'principle_grid', label: 'Principle grid', Icon: Columns3 },
   { type: 'solution_grid', label: 'Solution grid', Icon: Box },
@@ -213,15 +122,20 @@ const DESIGN_BLOCKS: Array<{ type: BuilderNodeType; label: string; Icon: typeof 
   { type: 'partner_directory', label: 'Partner directory', Icon: Box },
   { type: 'logo_grid', label: 'Logo grid', Icon: ImageIcon },
   { type: 'method_list', label: 'Method list', Icon: Text },
+  { type: 'partner_contact', label: 'Partner CTA', Icon: MousePointer2 },
 ];
 
 type BuilderField = { key: string; label: string; multiline?: boolean };
 
 const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
   brand_hero: [
-    { key: 'eyebrow', label: 'Eyebrow' }, { key: 'title', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
+    { key: 'variant', label: 'Hero style (home or partners)' }, { key: 'eyebrow', label: 'Eyebrow' }, { key: 'title', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
     { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'primaryLabel', label: 'Primary button label' }, { key: 'primaryHref', label: 'Primary button destination' },
-    { key: 'secondaryLabel', label: 'Secondary button label' }, { key: 'secondaryHref', label: 'Secondary button destination' }, { key: 'logo', label: 'Logo or stage image URL' },
+    { key: 'secondaryLabel', label: 'Secondary button label' }, { key: 'secondaryHref', label: 'Secondary button destination' }, { key: 'logo', label: 'Logo or stage image URL' }, { key: 'capabilities', label: 'Capability labels — one per line', multiline: true },
+  ],
+  home_intro: [
+    { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
+    { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'linkLabel', label: 'Link label' }, { key: 'linkHref', label: 'Link destination' }, { key: 'items', label: 'Principles — one “Title | Description” per line', multiline: true },
   ],
   split_intro: [
     { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
@@ -255,6 +169,9 @@ const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
   ],
   method_list: [
     { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'items', label: 'Methods — “Title | Description” per line', multiline: true },
+  ],
+  partner_contact: [
+    { key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'ctaLabel', label: 'Button label' }, { key: 'ctaHref', label: 'Button destination' },
   ],
 };
 
@@ -499,12 +416,32 @@ export function VisualEditor() {
     activePageSlug,
   );
   const builderPage = builderDocument ? normaliseBuilderPage(builderDocument.data) : emptyBuilderPage();
+  const globalSettings = findDocument(documents, 'site_settings', 'global');
+  const navigation = findDocument(documents, 'navigation', 'main');
+  const previewNavItems = headerLinks(navigation?.data.items);
+  const previewChrome = {
+    variant: page,
+    navItems: previewNavItems.length ? previewNavItems : DEFAULT_HOME.navItems,
+    headerCta: {
+      label: text(navigation?.data.ctaLabel, DEFAULT_HOME.headerCta.label),
+      href: text(navigation?.data.ctaHref, DEFAULT_HOME.headerCta.href),
+    },
+    site: {
+      logo: text(globalSettings?.data.logo, DEFAULT_HOME.site.logo),
+      phone: text(globalSettings?.data.phone, DEFAULT_HOME.site.phone),
+      phoneHref: text(globalSettings?.data.phoneHref, DEFAULT_HOME.site.phoneHref),
+      address: text(globalSettings?.data.address, DEFAULT_HOME.site.address),
+      addressUrl: text(globalSettings?.data.addressUrl, DEFAULT_HOME.site.addressUrl),
+    },
+    footer: {
+      address: text(globalSettings?.data.address, DEFAULT_HOME.footer.address),
+      copyright: text(globalSettings?.data.copyright, DEFAULT_HOME.footer.copyright),
+    },
+  } as const;
   const hasPageBindings =
     isCustomPage
       ? true
-      : page === 'home'
-      ? Boolean(findDocument(documents, 'home_section', 'hero'))
-      : Boolean(findDocument(documents, 'page_section', 'partners-hero'));
+      : Boolean(builderDocument && Object.values(builderPage.slots).some((nodes) => nodes.length > 0));
   const pageDocuments = useMemo(() => {
     const types = new Set(pageLayers.map((layer) => layer.type));
     return documents.filter(
@@ -713,8 +650,8 @@ export function VisualEditor() {
       const builderDrafts = (['home', 'partners'] as PageKey[]).map((pageKey) => ({
         type: 'builder_page',
         slug: pageKey,
-        title: `${pageKey === 'home' ? 'Home' : 'Partners'} custom blocks`,
-        data: emptyBuilderPage(),
+        title: pageKey === 'home' ? 'Home' : 'Partners',
+        data: pageKey === 'home' ? createHomeBuilderPage() : createPartnersBuilderPage(),
       }));
       const toCreate = [...siteContentSeed.documents, ...builderDrafts].filter(
         (entry) => !known.has(`${entry.type}/${entry.slug}`),
@@ -1092,17 +1029,6 @@ export function VisualEditor() {
     if (document) selectDocument(document);
   };
 
-  const previewProps = {
-    documents,
-    selected,
-    onSelect: (field: FieldRef) => setSelected(field),
-    onChange: updateField,
-    onSelectDocument: selectDocument,
-    draggedId,
-    setDraggedId,
-    onDropRepeater: reorderRepeater,
-  };
-
   return (
     <div className="visual-editor">
       <header className="visual-toolbar">
@@ -1421,13 +1347,10 @@ export function VisualEditor() {
           {!hasPageBindings && (
             <div className="visual-initialize-banner" role="status">
               <div>
-                <strong>
-                  These visible values are currently static fallbacks.
-                </strong>
+                <strong>This page does not yet have a CMS component tree.</strong>
                 <p>
-                  Create CMS draft records to bind every heading, button, card,
-                  and image to the editor. Nothing will be published
-                  automatically.
+                  Create the structured page draft to make every visual block
+                  editable. Nothing will be published automatically.
                 </p>
               </div>
               <button
@@ -1436,9 +1359,7 @@ export function VisualEditor() {
                 disabled={initializing}
                 onClick={() => void initializeEditableDrafts()}
               >
-                {initializing
-                  ? 'Preparing editable drafts…'
-                  : 'Make this page editable'}
+                {initializing ? 'Preparing editable drafts…' : 'Create CMS page tree'}
               </button>
             </div>
           )}
@@ -1449,12 +1370,20 @@ export function VisualEditor() {
                 <h1>{activeCustomPage?.title}</h1>
                 <span>{activeCustomPage && customPageHref(activeCustomPage.slug)}</span>
               </section>
-            ) : page === 'home' ? (
-              <HomePreview {...previewProps} />
             ) : (
-              <PartnersPreview {...previewProps} />
+              <CmsSitePage
+                kind={page}
+                page={builderPage}
+                chrome={previewChrome}
+                style={designVariables(designSystemFromDoc(globalSettings?.data.design))}
+                editable
+                selectedNodeId={selectedBuilderNodeId}
+                onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
+                onDropNode={moveBuilderBlock}
+                onDragStartNode={setDraggedBuilderNodeId}
+              />
             )}
-            <section className="visual-builder-preview" aria-label="Custom block preview">
+            {isCustomPage && <section className="visual-builder-preview" aria-label="Custom block preview">
               <p>
                 Custom blocks · {BUILDER_SLOTS.find((slot) => slot.id === activeBuilderSlot)?.label}
               </p>
@@ -1472,7 +1401,7 @@ export function VisualEditor() {
                   Drag an element here or choose one from the library.
                 </div>
               )}
-            </section>
+            </section>}
           </div>
         </main>
 
@@ -1561,13 +1490,13 @@ export function VisualEditor() {
               <section className="visual-section-actions">
                 <h3>Layout & visibility</h3>
                 <label className="visual-field"><span>Colour treatment</span><select value={selectedBuilderNode.styles.tone} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, tone: event.target.value as BuilderNode['styles']['tone'] } }))}><option value="default">Default</option><option value="muted">Soft neutral</option><option value="brand">Brand dark</option><option value="gradient">Brand gradient</option></select></label>
-                <label className="visual-field"><span>Vertical spacing</span><select value={selectedBuilderNode.styles.padding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, padding: event.target.value as BuilderNode['styles']['padding'] } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
-                <label className="visual-field"><span>Content alignment</span><select value={selectedBuilderNode.styles.align} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, align: event.target.value as BuilderNode['styles']['align'] } }))}><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
-                <label className="visual-field"><span>Content width</span><select value={selectedBuilderNode.styles.width} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, width: event.target.value as BuilderNode['styles']['width'] } }))}><option value="content">Content</option><option value="wide">Wide</option><option value="full">Full bleed</option></select></label>
+                <label className="visual-field"><span>Vertical spacing</span><select value={selectedBuilderNode.styles.padding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, padding: event.target.value as BuilderNode['styles']['padding'] } }))}><option value="inherit">Original component spacing</option><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                <label className="visual-field"><span>Content alignment</span><select value={selectedBuilderNode.styles.align} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, align: event.target.value as BuilderNode['styles']['align'] } }))}><option value="inherit">Original component alignment</option><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option></select></label>
+                <label className="visual-field"><span>Content width</span><select value={selectedBuilderNode.styles.width} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, width: event.target.value as BuilderNode['styles']['width'] } }))}><option value="inherit">Original component width</option><option value="content">Content</option><option value="wide">Wide</option><option value="full">Full bleed</option></select></label>
                 <label className="visual-field"><span>Corner radius</span><select value={selectedBuilderNode.styles.radius} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, radius: event.target.value as BuilderNode['styles']['radius'] } }))}><option value="none">None</option><option value="sm">Small</option><option value="md">Medium</option><option value="lg">Large</option></select></label>
                 <label className="visual-field"><span>Border</span><select value={selectedBuilderNode.styles.border} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, border: event.target.value as BuilderNode['styles']['border'] } }))}><option value="none">None</option><option value="soft">Soft</option><option value="strong">Strong</option></select></label>
                 <label className="visual-field"><span>Shadow</span><select value={selectedBuilderNode.styles.shadow} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, shadow: event.target.value as BuilderNode['styles']['shadow'] } }))}><option value="none">None</option><option value="soft">Soft</option><option value="lifted">Lifted</option></select></label>
-                <label className="visual-field"><span>Internal gap</span><select value={selectedBuilderNode.styles.gap} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, gap: event.target.value as BuilderNode['styles']['gap'] } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                <label className="visual-field"><span>Internal gap</span><select value={selectedBuilderNode.styles.gap} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, gap: event.target.value as BuilderNode['styles']['gap'] } }))}><option value="inherit">Original component gap</option><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
                 <label className="visual-field"><span>Hover effect</span><select value={selectedBuilderNode.styles.hover} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, hover: event.target.value as BuilderNode['styles']['hover'] } }))}><option value="none">None</option><option value="lift">Lift</option></select></label>
                 <label className="visual-field"><span>Entrance motion</span><select value={selectedBuilderNode.styles.motion} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, styles: { ...node.styles, motion: event.target.value as BuilderNode['styles']['motion'] } }))}><option value="none">None</option><option value="reveal">Reveal</option><option value="float">Float</option></select></label>
                 <label className="visual-field"><span>Visibility</span><select value={selectedBuilderNode.responsive.visibility} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, visibility: event.target.value as BuilderNode['responsive']['visibility'] } }))}><option value="all">All devices</option><option value="desktop">Desktop only</option><option value="mobile">Mobile only</option></select></label>
