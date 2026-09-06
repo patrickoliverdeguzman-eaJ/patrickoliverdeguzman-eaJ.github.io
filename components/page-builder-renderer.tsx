@@ -58,7 +58,9 @@ function safeImage(value: string): string | null {
 }
 
 function lines(value: string): string[] {
-  return value.split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 24);
+  // Builder textareas store real line breaks. Accept an escaped line break as
+  // well so imported records cannot collapse a repeatable block into one row.
+  return value.replaceAll('\\n', '\n').split('\n').map((item) => item.trim()).filter(Boolean).slice(0, 24);
 }
 
 function records(value: string, fields: number): string[][] {
