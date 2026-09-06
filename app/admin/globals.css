@@ -920,8 +920,13 @@
   transition: width 260ms ease;
 }
 .visual-canvas-desktop {
-  width: min(100%, 1240px);
+  width: max(100%, 1280px);
+  max-width: none;
+  margin: 0;
+  border: 0;
+  box-shadow: none;
 }
+.visual-canvas-area-desktop { padding: 0; }
 .visual-canvas-tablet {
   width: min(100%, 820px);
 }

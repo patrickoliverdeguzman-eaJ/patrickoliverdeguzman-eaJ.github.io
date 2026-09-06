@@ -1388,7 +1388,7 @@ export function VisualEditor() {
         </aside>
 
         <main
-          className="visual-canvas-area"
+          className={`visual-canvas-area visual-canvas-area-${device}`}
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             const type = event.dataTransfer.getData('application/x-infostorage-builder-new');
