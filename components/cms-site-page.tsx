@@ -2,7 +2,7 @@
 
 import { type CSSProperties } from 'react';
 import { PageBuilderRenderer, type SiteChrome } from '@/components/page-builder-renderer';
-import { type BuilderPage, BUILDER_SLOTS } from '@/lib/page-builder';
+import { type BuilderPage, BUILDER_SLOTS, normalisePageCss } from '@/lib/page-builder';
 
 type BuilderInteractions = {
   editable?: boolean;
@@ -17,14 +17,26 @@ type CmsSitePageProps = BuilderInteractions & {
   page?: BuilderPage;
   chrome: SiteChrome;
   style?: CSSProperties;
+  /** The CMS preview scopes page CSS so a draft cannot restyle editor chrome. */
+  previewCss?: boolean;
 };
+
+export function PageCssStyle({ css, preview }: { css?: string; preview?: boolean }) {
+  const safeCss = normalisePageCss(css);
+  if (!safeCss) return null;
+  const renderedCss = preview
+    ? `@scope ([data-cms-page-preview]) {\n${safeCss}\n}`
+    : safeCss;
+  return <style data-cms-page-css="true" dangerouslySetInnerHTML={{ __html: renderedCss }} />;
+}
 
 /** The public page shell has no page-specific copy or layout. It composes the
  * CMS page tree with shared CMS-managed navigation and footer data. */
-export function CmsSitePage({ kind, page, chrome, style, ...interactions }: CmsSitePageProps) {
+export function CmsSitePage({ kind, page, chrome, style, previewCss, ...interactions }: CmsSitePageProps) {
   const className = kind === 'partners' ? 'partner-page' : 'site-shell';
   return (
-    <main className={className} style={style}>
+    <main className={className} style={style} data-cms-page-preview={previewCss ? '' : undefined}>
+      <PageCssStyle css={page?.customCss} preview={previewCss} />
       {BUILDER_SLOTS.map((slot) => (
         <PageBuilderRenderer key={slot.id} page={page} slot={slot.id} chrome={chrome} {...interactions} />
       ))}

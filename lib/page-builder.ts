@@ -65,7 +65,12 @@ export type BuilderNode = {
 export type BuilderPage = {
   version: 1;
   slots: Record<BuilderSlot, BuilderNode[]>;
+  /** Page-specific CSS is intentionally separate from global design tokens.
+   * It is useful when faithfully recreating an existing page treatment. */
+  customCss: string;
 };
+
+export const MAX_PAGE_CSS_LENGTH = 80_000;
 
 export const BUILDER_SLOTS: Array<{ id: BuilderSlot; label: string }> = [
   { id: 'afterHero', label: 'Below hero' },
@@ -116,7 +121,7 @@ function id(): string {
 }
 
 export function emptyBuilderPage(): BuilderPage {
-  return { version: 1, slots: defaultSlots() };
+  return { version: 1, slots: defaultSlots(), customCss: '' };
 }
 
 function readableBriefTitle(brief: string): string {
@@ -348,6 +353,14 @@ function safeText(value: unknown, fallback = '', max = 2_000): string {
   return typeof value === 'string' ? value.slice(0, max) : fallback;
 }
 
+/** CSS is page data, not markup. Disallow style tags so a draft cannot escape
+ * its own style element while it is being previewed in the CMS. */
+export function normalisePageCss(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const css = value.slice(0, MAX_PAGE_CSS_LENGTH).trim();
+  return /<\s*\/?\s*style\b/i.test(css) ? '' : css;
+}
+
 function safeChoice<T extends string | number>(
   value: unknown,
   choices: readonly T[],
@@ -499,6 +512,7 @@ function normaliseNode(
 export function normaliseBuilderPage(value: unknown): BuilderPage {
   const page = emptyBuilderPage();
   if (!isRecord(value) || !isRecord(value.slots)) return page;
+  page.customCss = normalisePageCss(value.customCss);
   const knownIds = new Set<string>();
   for (const slot of BUILDER_SLOTS) {
     const rawNodes = value.slots[slot.id];

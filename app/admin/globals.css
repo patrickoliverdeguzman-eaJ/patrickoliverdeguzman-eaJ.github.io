@@ -768,6 +768,48 @@
 .visual-new-page-form p { margin: 0.22rem 0 0; color: #735568; font-size: 0.7rem; line-height: 1.4; }
 .visual-new-page-form label { display: grid; gap: 0.28rem; min-width: 180px; color: #513240; font-size: 0.68rem; font-weight: 720; }
 .visual-new-page-form input { min-width: 0; padding: 0.5rem 0.6rem; border: 1px solid rgba(130, 0, 64, 0.2); border-radius: 0.4rem; color: #2a0d1c; font: inherit; font-size: 0.78rem; }
+.visual-toolbar .admin-btn.active {
+  border-color: #820040;
+  background: #f6e9ef;
+  color: #820040;
+}
+.visual-page-css {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem 1rem;
+  border-bottom: 1px solid rgba(130, 0, 64, 0.16);
+  background: linear-gradient(90deg, #fffafd, #faf2f6);
+}
+.visual-page-css-heading,
+.visual-page-css-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.visual-page-css-heading > div { display: grid; gap: 0.18rem; }
+.visual-page-css-heading span {
+  color: #820040;
+  font-size: 0.61rem;
+  font-weight: 780;
+  letter-spacing: 0.11em;
+}
+.visual-page-css-heading strong { color: #510028; font-size: 0.86rem; }
+.visual-page-css-heading p { max-width: 720px; margin: 0; color: #735568; font-size: 0.73rem; line-height: 1.45; }
+.visual-page-css-input {
+  width: 100%;
+  min-height: 190px;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(130, 0, 64, 0.22);
+  border-radius: 0.55rem;
+  background: #2a0d1c;
+  color: #ffeef5;
+  font: 0.78rem/1.55 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  resize: vertical;
+  tab-size: 2;
+}
+.visual-page-css-input:focus { outline: none; border-color: #e64a91; box-shadow: 0 0 0 3px rgba(130, 0, 64, 0.12); }
+.visual-page-css-footer small { color: #735568; font-size: 0.68rem; }
 .visual-builder-library {
   display: grid;
   gap: 0.55rem;
@@ -1193,5 +1235,10 @@
   .visual-toolbar-actions {
     margin-left: 0;
     flex-wrap: wrap;
+  }
+  .visual-page-css-heading,
+  .visual-page-css-footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

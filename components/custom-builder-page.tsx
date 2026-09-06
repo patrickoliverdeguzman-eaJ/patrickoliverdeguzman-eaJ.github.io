@@ -3,6 +3,7 @@
 import { ArrowUpRight, Menu } from 'lucide-react';
 import { type CSSProperties, useEffect, useState } from 'react';
 import SiteChatbot from '@/app/site-chatbot';
+import { PageCssStyle } from '@/components/cms-site-page';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
 import { CMS_API } from '@/lib/cms-api';
 import { normaliseBuilderPage, type BuilderPage } from '@/lib/page-builder';
@@ -71,6 +72,7 @@ export function CustomBuilderPage() {
   return (
     <>
       <main className="custom-builder-page" style={designVariables(site.design) as CSSProperties}>
+        <PageCssStyle css={page?.customCss} />
         <header className="custom-page-header">
           <nav className="nav-wrap" aria-label="Main navigation">
             <a href="/" className="brand brand-image" aria-label="INFOStorage home">

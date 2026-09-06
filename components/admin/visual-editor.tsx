@@ -5,6 +5,7 @@ import {
   Archive,
   ArrowLeft,
   Box,
+  Code2,
   ChevronDown,
   Columns3,
   Copy,
@@ -27,7 +28,7 @@ import {
 import { CMS_API } from '@/lib/cms-api';
 import { adminPath } from '@/lib/site-paths';
 import { PageBuilderRenderer } from '@/components/page-builder-renderer';
-import { CmsSitePage } from '@/components/cms-site-page';
+import { CmsSitePage, PageCssStyle } from '@/components/cms-site-page';
 import {
   appendBuilderNode,
   BUILDER_NODE_TYPES,
@@ -355,6 +356,7 @@ export function VisualEditor() {
   const [newPageSlug, setNewPageSlug] = useState('');
   const [newPageBrief, setNewPageBrief] = useState('');
   const [copiedBuilderNode, setCopiedBuilderNode] = useState<BuilderNode | null>(null);
+  const [pageCssOpen, setPageCssOpen] = useState(false);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -409,6 +411,7 @@ export function VisualEditor() {
   );
   const isCustomPage = Boolean(activeCustomPage);
   const activePageSlug = activeCustomPage?.slug ?? page;
+  const activePageTitle = activeCustomPage?.title ?? (page === 'home' ? 'Home' : 'Partners');
   const pageLayers = isCustomPage ? [] : PAGE_LAYERS[page];
   const builderDocument = findDocument(
     documents,
@@ -494,6 +497,11 @@ export function VisualEditor() {
       document.id === builderDocument.id ? { ...document, data: nextPage } : document,
     );
     markChanged(next, [builderDocument.id]);
+  };
+
+  const updatePageCss = (value: string) => {
+    if (!builderDocument) return;
+    updateBuilder({ ...builderPage, customCss: value.slice(0, 80_000) });
   };
 
   const ensureBuilderDocument = async (): Promise<CmsDocument | null> => {
@@ -1129,6 +1137,15 @@ export function VisualEditor() {
             </button>
           </div>
           <button
+            className={`admin-btn admin-btn-ghost ${pageCssOpen ? 'active' : ''}`}
+            type="button"
+            disabled={!builderDocument}
+            onClick={() => setPageCssOpen((open) => !open)}
+            title="Edit CSS for this page"
+          >
+            <Code2 size={16} /> Page CSS
+          </button>
+          <button
             className="admin-btn admin-btn-secondary"
             type="button"
             onClick={() => void saveDrafts()}
@@ -1146,6 +1163,40 @@ export function VisualEditor() {
           </button>
         </div>
       </header>
+
+      {pageCssOpen && builderDocument && (
+        <section className="visual-page-css" aria-label="Page CSS editor">
+          <div className="visual-page-css-heading">
+            <div>
+              <span>PAGE CSS</span>
+              <strong>{activePageTitle}</strong>
+              <p>Paste CSS rules to match this page precisely. They override the standard site styles only on this page.</p>
+            </div>
+            <button
+              className="admin-btn admin-btn-ghost"
+              type="button"
+              disabled={!builderPage.customCss}
+              onClick={() => updatePageCss('')}
+            >
+              Clear CSS
+            </button>
+          </div>
+          <textarea
+            className="visual-page-css-input"
+            value={builderPage.customCss}
+            maxLength={80_000}
+            spellCheck={false}
+            placeholder={'/* Example: refine the Home hero without changing other pages */\n.hero { min-height: 44rem; }\n@media (max-width: 700px) { .hero { min-height: auto; } }'}
+            onChange={(event) => updatePageCss(event.target.value)}
+          />
+          <div className="visual-page-css-footer">
+            <small>{builderPage.customCss.length.toLocaleString()} / 80,000 characters · CSS rules only, without &lt;style&gt; tags.</small>
+            <button className="admin-btn admin-btn-secondary" type="button" onClick={() => void saveDrafts()} disabled={!dirtyIds.size || status === 'saving'}>
+              <Save size={16} /> Save CSS draft
+            </button>
+          </div>
+        </section>
+      )}
 
       {addingPage && (
         <section className="visual-new-page-form" aria-label="Create a new page">
@@ -1376,6 +1427,7 @@ export function VisualEditor() {
                 page={builderPage}
                 chrome={previewChrome}
                 style={designVariables(designSystemFromDoc(globalSettings?.data.design))}
+                previewCss
                 editable
                 selectedNodeId={selectedBuilderNodeId}
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
@@ -1383,7 +1435,8 @@ export function VisualEditor() {
                 onDragStartNode={setDraggedBuilderNodeId}
               />
             )}
-            {isCustomPage && <section className="visual-builder-preview" aria-label="Custom block preview">
+            {isCustomPage && <section className="visual-builder-preview" data-cms-page-preview aria-label="Custom block preview">
+              <PageCssStyle css={builderPage.customCss} preview />
               <p>
                 Custom blocks · {BUILDER_SLOTS.find((slot) => slot.id === activeBuilderSlot)?.label}
               </p>

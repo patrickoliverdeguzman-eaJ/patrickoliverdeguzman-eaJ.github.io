@@ -419,6 +419,7 @@ function migratedBlock(id: string, type: BuilderNodeType, props: BuilderNode['pr
 export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): BuilderPage {
   return {
     version: 1,
+    customCss: '',
     slots: {
       afterHero: [migratedBlock('home-hero', 'brand_hero', {
         variant: 'home', eyebrow: content.hero.eyebrow, title: content.hero.titleA, accent: content.hero.titleAccent,
@@ -449,6 +450,7 @@ export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): Buil
 export function createPartnersBuilderPage(content: PartnersContent = DEFAULT_PARTNERS): BuilderPage {
   return {
     version: 1,
+    customCss: '',
     slots: {
       afterHero: [migratedBlock('partners-hero', 'brand_hero', {
         variant: 'partners', eyebrow: content.hero.eyebrow, title: content.hero.titleA, accent: content.hero.titleAccent,

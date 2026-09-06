@@ -75,6 +75,7 @@ type ChatMessageRow = {
 };
 
 const MAX_JSON_BYTES = 128 * 1024;
+const MAX_PAGE_CSS_CHARS = 80_000;
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 const MAX_CHAT_MESSAGE_CHARS = 2_000;
 const MAX_CHAT_CONVERSATIONS = 100;
@@ -256,6 +257,14 @@ function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): v
 
 function validateBuilderPage(value: JsonRecord): void {
   if (value.version !== 1 || !isRecord(value.slots)) throw new HttpError(400, 'The builder page schema is invalid.', 'invalid_input');
+  if (value.customCss !== undefined) {
+    if (typeof value.customCss !== 'string' || value.customCss.length > MAX_PAGE_CSS_CHARS) {
+      throw new HttpError(400, 'Page CSS must be plain text shorter than 80,000 characters.', 'invalid_input');
+    }
+    if (/<\s*\/?\s*style\b/i.test(value.customCss)) {
+      throw new HttpError(400, 'Paste CSS rules only, without style tags.', 'invalid_input');
+    }
+  }
   const ids = new Set<string>();
   for (const [slot, nodes] of Object.entries(value.slots)) {
     if (!BUILDER_SLOTS.has(slot) || !Array.isArray(nodes) || nodes.length > 30) throw new HttpError(400, 'A builder page slot is invalid.', 'invalid_input');
