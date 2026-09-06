@@ -906,7 +906,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .page-builder-section,
 .page-builder-container { padding-left: clamp(1.5rem, 5vw, 5.25rem); padding-right: clamp(1.5rem, 5vw, 5.25rem); }
 .page-builder-section { padding-top: clamp(3rem, 6vw, 6rem); padding-bottom: clamp(3rem, 6vw, 6rem); }
-.page-builder-container { width: min(100%, var(--cms-container)); margin-inline: auto; }
+.page-builder-container { width: 100%; margin-inline: auto; }
 .page-builder-card { display: grid; gap: 1rem; padding: clamp(1.25rem, 3vw, 2.25rem); border: 1px solid var(--line); border-radius: var(--cms-radius); }
 .page-builder-columns { display: grid; gap: clamp(1rem, 3vw, 2.5rem); }
 .page-builder-columns-1 { grid-template-columns: minmax(0, 1fr); }
@@ -938,9 +938,9 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .page-builder-align-right { text-align: right; }
 .page-builder-align-right.page-builder-text,
 .page-builder-align-right.page-builder-button { margin-left: auto; }
-.page-builder-width-content { max-width: 1120px; }
-.page-builder-width-wide { max-width: 1440px; }
-.page-builder-width-full { max-width: none; }
+.page-builder-node.page-builder-width-content { width: 100%; max-width: 1120px; margin-inline: auto; }
+.page-builder-node.page-builder-width-wide { width: 100%; max-width: 1440px; margin-inline: auto; }
+.page-builder-node.page-builder-width-full { width: 100%; max-width: none; }
 .page-builder-radius-sm { border-radius: 0.45rem; overflow: hidden; }
 .page-builder-radius-md { border-radius: var(--cms-radius); overflow: hidden; }
 .page-builder-radius-lg { border-radius: calc(var(--cms-radius) * 1.75); overflow: hidden; }

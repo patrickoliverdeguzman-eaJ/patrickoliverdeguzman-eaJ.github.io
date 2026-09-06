@@ -94,6 +94,30 @@ const defaultStyles: BuilderNode['styles'] = {
   hover: 'none',
 };
 
+// Branded composition blocks own their internal reading width and visual
+// framing. Their outer surface must therefore always occupy the viewport;
+// otherwise a missing legacy `styles.width` value makes the section inherit
+// the generic 1120px content limit and exposes blank space at desktop sizes.
+const fullBleedBlockTypes = new Set<BuilderNodeType>([
+  'brand_hero',
+  'home_intro',
+  'split_intro',
+  'principle_grid',
+  'solution_grid',
+  'continuity_panel',
+  'service_list',
+  'tag_band',
+  'contact_panel',
+  'partner_directory',
+  'logo_grid',
+  'method_list',
+  'partner_contact',
+]);
+
+function defaultWidthForNode(type: BuilderNodeType): BuilderNode['styles']['width'] {
+  return fullBleedBlockTypes.has(type) ? 'full' : 'content';
+}
+
 const defaultResponsive: BuilderNode['responsive'] = {
   visibility: 'all',
   tabletColumns: 'inherit',
@@ -168,7 +192,7 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
     id: id(),
     type,
     props: {},
-    styles: { ...defaultStyles },
+    styles: { ...defaultStyles, width: defaultWidthForNode(type) },
     responsive: { ...defaultResponsive },
     children: [],
   };
@@ -247,13 +271,13 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         linkLabel: 'Explore more',
         linkHref: '#content',
       };
-      node.styles = { ...defaultStyles, padding: 'spacious', width: 'wide' };
+      node.styles = { ...defaultStyles, padding: 'spacious', width: 'full' };
       break;
     case 'principle_grid':
       node.props = {
         items: 'Specialized|Focused expertise for the work at hand.\nRecognized|Delivery that follows through.\nRespected|Professional stewardship from planning to support.',
       };
-      node.styles = { ...defaultStyles, width: 'wide', gap: 'spacious' };
+      node.styles = { ...defaultStyles, width: 'full', gap: 'spacious' };
       break;
     case 'solution_grid':
       node.props = {
@@ -282,7 +306,7 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         items: 'Hardware installation and support\nHelpdesk\nConsulting and implementation\nProject management and integration',
         href: '#contact',
       };
-      node.styles = { ...defaultStyles, padding: 'spacious', width: 'wide' };
+      node.styles = { ...defaultStyles, padding: 'spacious', width: 'full' };
       break;
     case 'tag_band':
       node.props = {
@@ -329,7 +353,7 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         heading: 'The value is in the connection.',
         items: 'Context first|Start with the workload, risk, and operating reality.\nIntegrated design|Bring the right technologies into one architecture.\nLocal stewardship|Stay close through implementation and handover.',
       };
-      node.styles = { ...defaultStyles, tone: 'muted', padding: 'spacious', width: 'wide' };
+      node.styles = { ...defaultStyles, tone: 'muted', padding: 'spacious', width: 'full' };
       break;
     case 'partner_contact':
       node.props = {
@@ -433,7 +457,7 @@ function normaliseNode(
       width: safeChoice(
         value.styles && isRecord(value.styles) ? value.styles.width : undefined,
         ['inherit', 'content', 'wide', 'full'] as const,
-        'content',
+        defaultWidthForNode(type),
       ),
       radius: safeChoice(
         value.styles && isRecord(value.styles) ? value.styles.radius : undefined,
