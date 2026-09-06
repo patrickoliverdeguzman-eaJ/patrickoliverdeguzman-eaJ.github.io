@@ -128,6 +128,15 @@ const DESIGN_BLOCKS: Array<{ type: BuilderNodeType; label: string; Icon: typeof 
 
 type BuilderField = { key: string; label: string; multiline?: boolean };
 
+type RepeaterInput = { label: string; placeholder: string; multiline?: boolean; lineSeparator?: string };
+type DesignBlockRepeater = {
+  key: string;
+  label: string;
+  itemLabel: string;
+  inputs: RepeaterInput[];
+  max?: number;
+};
+
 const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
   brand_hero: [
     { key: 'variant', label: 'Hero style (home or partners)' }, { key: 'eyebrow', label: 'Eyebrow' }, { key: 'title', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
@@ -175,6 +184,81 @@ const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
     { key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'ctaLabel', label: 'Button label' }, { key: 'ctaHref', label: 'Button destination' },
   ],
 };
+
+// Repeating CMS fields used to be edited as pipe-separated text. Keep the
+// compact value format for compatibility with the renderer, but present it as
+// simple rows and fields so an editor never needs to learn that syntax.
+const DESIGN_BLOCK_REPEATERS: Partial<Record<BuilderNodeType, DesignBlockRepeater>> = {
+  brand_hero: { key: 'capabilities', label: 'Capabilities', itemLabel: 'capability', inputs: [{ label: 'Label', placeholder: 'For example: Data protection' }] },
+  home_intro: { key: 'items', label: 'Principles', itemLabel: 'principle', inputs: [{ label: 'Title', placeholder: 'For example: Specialized' }, { label: 'Description', placeholder: 'Describe this principle', multiline: true }] },
+  principle_grid: { key: 'items', label: 'Principles', itemLabel: 'principle', inputs: [{ label: 'Title', placeholder: 'For example: Specialized' }, { label: 'Description', placeholder: 'Describe this principle', multiline: true }] },
+  solution_grid: { key: 'items', label: 'Solutions', itemLabel: 'solution', inputs: [{ label: 'Title', placeholder: 'For example: Data protection' }, { label: 'Description', placeholder: 'Describe the solution', multiline: true }, { label: 'Included features', placeholder: 'One feature per line', multiline: true, lineSeparator: ';' }] },
+  service_list: { key: 'items', label: 'Services', itemLabel: 'service', inputs: [{ label: 'Service name', placeholder: 'For example: Helpdesk' }] },
+  tag_band: { key: 'tags', label: 'Sector tags', itemLabel: 'tag', inputs: [{ label: 'Tag', placeholder: 'For example: Financial services' }] },
+  partner_directory: { key: 'items', label: 'Partners', itemLabel: 'partner', inputs: [{ label: 'Partner name', placeholder: 'For example: Oracle' }, { label: 'Focus', placeholder: 'For example: Cloud infrastructure', multiline: true }] },
+  logo_grid: { key: 'items', label: 'Client logos', itemLabel: 'client', inputs: [{ label: 'Client name', placeholder: 'For example: Global Payments' }, { label: 'Logo image URL', placeholder: 'Paste an uploaded image URL' }, { label: 'Optional logo treatment', placeholder: 'Leave blank unless already used' }] },
+  method_list: { key: 'items', label: 'Methods', itemLabel: 'method', inputs: [{ label: 'Title', placeholder: 'For example: Context first' }, { label: 'Description', placeholder: 'Describe the method', multiline: true }] },
+};
+
+function repeaterRows(value: unknown, config: DesignBlockRepeater): string[][] {
+  return String(value ?? '')
+    .split('\n')
+    .filter((line) => line.trim())
+    .slice(0, 24)
+    .map((line) => Array.from({ length: config.inputs.length }, (_, index) => {
+      const field = line.split('|')[index]?.trim() ?? '';
+      return config.inputs[index].lineSeparator ? field.split(config.inputs[index].lineSeparator).map((item) => item.trim()).filter(Boolean).join('\n') : field;
+    }));
+}
+
+function serialiseRepeaterRows(rows: string[][], config: DesignBlockRepeater): string {
+  return rows
+    .filter((row) => row.some((value) => value.trim()))
+    .map((row) => row.map((value, index) => value.replaceAll('|', ' ').replaceAll('\n', config.inputs[index].lineSeparator ?? ' ').trim()).join(' | '))
+    .join('\n');
+}
+
+function BuilderRepeaterEditor({
+  config,
+  value,
+  onChange,
+}: {
+  config: DesignBlockRepeater;
+  value: unknown;
+  onChange: (value: string) => void;
+}) {
+  const rows = repeaterRows(value, config);
+  const commit = (nextRows: string[][]) => onChange(serialiseRepeaterRows(nextRows, config));
+  const addItem = () => commit([...rows, [`New ${config.itemLabel}`, ...Array.from({ length: config.inputs.length - 1 }, () => '')]]);
+
+  return (
+    <section className="visual-repeater-editor" aria-label={config.label}>
+      <div className="visual-repeater-editor-heading">
+        <div><span>{config.label}</span><small>Add and edit each {config.itemLabel} directly.</small></div>
+        <button type="button" onClick={addItem} disabled={rows.length >= (config.max ?? 24)}><Plus size={14} /> Add {config.itemLabel}</button>
+      </div>
+      {rows.length ? (
+        <div className="visual-repeater-items">
+          {rows.map((row, rowIndex) => (
+            <div className="visual-repeater-item" key={`${config.key}-${rowIndex}`}>
+              <div className="visual-repeater-item-heading"><strong>{config.itemLabel} {rowIndex + 1}</strong><button type="button" onClick={() => commit(rows.filter((_, index) => index !== rowIndex))}><Minus size={14} /> Remove</button></div>
+              {config.inputs.map((input, inputIndex) => (
+                <label className="visual-field" key={input.label}>
+                  <span>{input.label}</span>
+                  {input.multiline ? (
+                    <textarea value={row[inputIndex] ?? ''} placeholder={input.placeholder} onChange={(event) => commit(rows.map((current, index) => index === rowIndex ? current.map((field, fieldIndex) => fieldIndex === inputIndex ? event.target.value : field) : current))} />
+                  ) : (
+                    <input value={row[inputIndex] ?? ''} placeholder={input.placeholder} onChange={(event) => commit(rows.map((current, index) => index === rowIndex ? current.map((field, fieldIndex) => fieldIndex === inputIndex ? event.target.value : field) : current))} />
+                  )}
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      ) : <p className="visual-repeater-empty">No {config.label.toLowerCase()} yet. Add one to start.</p>}
+    </section>
+  );
+}
 
 const DESIGN_COLOR_FIELDS: Array<{ key: keyof Pick<DesignSystem, 'primary' | 'primaryDeep' | 'accent' | 'accentSoft' | 'surface' | 'surfaceMuted' | 'ink' | 'muted'>; label: string }> = [
   { key: 'primary', label: 'Primary brand' }, { key: 'primaryDeep', label: 'Deep brand' },
@@ -1007,6 +1091,9 @@ export function VisualEditor() {
   const selectedBuilderNode = selectedBuilderNodeId
     ? findBuilderNode(builderPage, selectedBuilderNodeId)
     : undefined;
+  const selectedBuilderRepeater = selectedBuilderNode
+    ? DESIGN_BLOCK_REPEATERS[selectedBuilderNode.type]
+    : undefined;
   const selectedHeaderLinks =
     selectedDocument?.type === 'navigation'
       ? headerLinks(selectedDocument.data.items)
@@ -1141,9 +1228,9 @@ export function VisualEditor() {
             type="button"
             disabled={!builderDocument}
             onClick={() => setPageCssOpen((open) => !open)}
-            title="Edit CSS for this page"
+            title="Optional developer CSS"
           >
-            <Code2 size={16} /> Page CSS
+            <Code2 size={16} /> Advanced CSS
           </button>
           <button
             className="admin-btn admin-btn-secondary"
@@ -1168,9 +1255,9 @@ export function VisualEditor() {
         <section className="visual-page-css" aria-label="Page CSS editor">
           <div className="visual-page-css-heading">
             <div>
-              <span>PAGE CSS</span>
+              <span>OPTIONAL ADVANCED CSS</span>
               <strong>{activePageTitle}</strong>
-              <p>Paste CSS rules to match this page precisely. They override the standard site styles only on this page.</p>
+              <p>Use the visual settings for normal changes. This is only for a developer-provided rule that the no-code controls cannot cover.</p>
             </div>
             <button
               className="admin-btn admin-btn-ghost"
@@ -1476,7 +1563,7 @@ export function VisualEditor() {
                   <input value={String(selectedBuilderNode.props.label ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, label: event.target.value } }))} />
                 </label>
               )}
-              {DESIGN_BLOCK_FIELDS[selectedBuilderNode.type]?.map((field) => (
+              {DESIGN_BLOCK_FIELDS[selectedBuilderNode.type]?.filter((field) => field.key !== DESIGN_BLOCK_REPEATERS[selectedBuilderNode.type]?.key).map((field) => (
                 <label key={field.key} className="visual-field">
                   <span>{field.label}</span>
                   {field.multiline ? (
@@ -1492,6 +1579,16 @@ export function VisualEditor() {
                   )}
                 </label>
               ))}
+              {selectedBuilderRepeater && (
+                <BuilderRepeaterEditor
+                  config={selectedBuilderRepeater}
+                  value={selectedBuilderNode.props[selectedBuilderRepeater.key]}
+                  onChange={(value) => changeBuilderNode(selectedBuilderNode.id, (node) => ({
+                    ...node,
+                    props: { ...node.props, [selectedBuilderRepeater.key]: value },
+                  }))}
+                />
+              )}
               {['heading', 'text'].includes(selectedBuilderNode.type) && (
                 <label className="visual-field">
                   <span>{selectedBuilderNode.type === 'heading' ? 'Heading' : 'Text'}</span>
