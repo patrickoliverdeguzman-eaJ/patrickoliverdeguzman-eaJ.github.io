@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   ArrowLeft,
@@ -27,8 +27,9 @@ import {
 } from 'lucide-react';
 import { CMS_API } from '@/lib/cms-api';
 import { adminPath } from '@/lib/site-paths';
-import { PageBuilderRenderer } from '@/components/page-builder-renderer';
-import { CmsSitePage, PageCssStyle } from '@/components/cms-site-page';
+import { CmsSitePage } from '@/components/cms-site-page';
+import { CustomPageLayout } from '@/components/custom-page-layout';
+import { ElementCssEditor } from '@/components/admin/element-css-editor';
 import {
   appendBuilderNode,
   BUILDER_NODE_TYPES,
@@ -441,6 +442,8 @@ export function VisualEditor() {
   const [newPageBrief, setNewPageBrief] = useState('');
   const [copiedBuilderNode, setCopiedBuilderNode] = useState<BuilderNode | null>(null);
   const [pageCssOpen, setPageCssOpen] = useState(false);
+  const [elementCssOpen, setElementCssOpen] = useState(false);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -1228,9 +1231,12 @@ export function VisualEditor() {
             type="button"
             disabled={!builderDocument}
             onClick={() => setPageCssOpen((open) => !open)}
-            title="Optional developer CSS"
+            title="Edit the complete page stylesheet"
           >
-            <Code2 size={16} /> Advanced CSS
+            <Code2 size={16} /> Page CSS
+          </button>
+          <button className={`admin-btn admin-btn-secondary ${elementCssOpen ? 'active' : ''}`} type="button" disabled={!builderDocument} onClick={() => setElementCssOpen(!elementCssOpen)} aria-pressed={elementCssOpen}>
+            <MousePointer2 size={16} /> Element CSS
           </button>
           <button
             className="admin-btn admin-btn-secondary"
@@ -1251,13 +1257,15 @@ export function VisualEditor() {
         </div>
       </header>
 
+      {elementCssOpen && builderDocument && <ElementCssEditor key={`${builderDocument.id}:${selectedBuilderNodeId ?? ''}`} canvasRef={canvasRef} css={builderPage.customCss} selectedNodeId={selectedBuilderNodeId} onChange={updatePageCss} />}
+
       {pageCssOpen && builderDocument && (
         <section className="visual-page-css" aria-label="Page CSS editor">
           <div className="visual-page-css-heading">
             <div>
-              <span>OPTIONAL ADVANCED CSS</span>
+              <span>PAGE STYLESHEET</span>
               <strong>{activePageTitle}</strong>
-              <p>Use the visual settings for normal changes. This is only for a developer-provided rule that the no-code controls cannot cover.</p>
+              <p>Edit CSS for any part of this page. Element CSS adds marked rule groups here; keep those markers when editing their rules.</p>
             </div>
             <button
               className="admin-btn admin-btn-ghost"
@@ -1501,13 +1509,13 @@ export function VisualEditor() {
               </button>
             </div>
           )}
-          <div className={`visual-canvas visual-canvas-${device}`}>
+          <div ref={canvasRef} className={`visual-canvas visual-canvas-${device}`}>
             {isCustomPage ? (
-              <section className="visual-custom-page-cover">
-                <p>Custom INFOStorage page</p>
-                <h1>{activeCustomPage?.title}</h1>
-                <span>{activeCustomPage && customPageHref(activeCustomPage.slug)}</span>
-              </section>
+              <CustomPageLayout title={activePageTitle} page={builderPage} chrome={previewChrome}
+                style={designVariables(designSystemFromDoc(globalSettings?.data.design))}
+                previewCss editable selectedNodeId={selectedBuilderNodeId}
+                onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
+                onDropNode={moveBuilderBlock} onDragStartNode={setDraggedBuilderNodeId} />
             ) : (
               <CmsSitePage
                 kind={page}
@@ -1522,26 +1530,11 @@ export function VisualEditor() {
                 onDragStartNode={setDraggedBuilderNodeId}
               />
             )}
-            {isCustomPage && <section className="visual-builder-preview" data-cms-page-preview aria-label="Custom block preview">
-              <PageCssStyle css={builderPage.customCss} preview />
-              <p>
-                Custom blocks · {BUILDER_SLOTS.find((slot) => slot.id === activeBuilderSlot)?.label}
-              </p>
-              <PageBuilderRenderer
-                page={builderPage}
-                slot={activeBuilderSlot}
-                editable
-                selectedNodeId={selectedBuilderNodeId}
-                onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
-                onDropNode={moveBuilderBlock}
-                onDragStartNode={setDraggedBuilderNodeId}
-              />
-              {!builderPage.slots[activeBuilderSlot].length && (
+            {isCustomPage && !BUILDER_SLOTS.some((slot) => builderPage.slots[slot.id].length) && (
                 <div className="visual-builder-drop-target">
                   Drag an element here or choose one from the library.
                 </div>
-              )}
-            </section>}
+            )}
           </div>
         </main>
 
@@ -1555,7 +1548,7 @@ export function VisualEditor() {
               <div className="visual-selection-label">
                 <span>Structured block</span>
                 <strong>{selectedBuilderNode.type}</strong>
-                <small>Safe component settings only — no raw HTML or custom CSS.</small>
+                <small>Edit content and layout here, or use Element CSS to style any part of this block.</small>
               </div>
               {['section', 'container', 'column', 'card'].includes(selectedBuilderNode.type) && (
                 <label className="visual-field">

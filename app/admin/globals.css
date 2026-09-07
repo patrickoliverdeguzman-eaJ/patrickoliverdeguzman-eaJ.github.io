@@ -810,6 +810,17 @@
 }
 .visual-page-css-input:focus { outline: none; border-color: #e64a91; box-shadow: 0 0 0 3px rgba(130, 0, 64, 0.12); }
 .visual-page-css-footer small { color: #735568; font-size: 0.68rem; }
+.visual-element-css { max-height: 460px; overflow: auto; }
+.visual-element-css .visual-field { margin: 0; }
+.visual-element-css .visual-page-css-heading strong { display: flex; align-items: center; gap: 0.4rem; }
+.visual-element-css .visual-page-css-input { min-height: 140px; }
+.visual-element-css .visual-css-selector { display: flex; align-items: center; gap: 1rem; }
+.visual-css-selector code { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: 0.8rem; color: #510028; user-select: all; }
+.visual-css-error, .visual-css-notice { margin: 0; font-size: 0.8rem; line-height: 1.5; }
+.visual-css-error { color: #ac1433; }
+.visual-css-notice { color: #735568; }
+.visual-css-picking [data-cms-page], .visual-css-picking [data-cms-page] * { cursor: crosshair !important; }
+.visual-css-picking [data-cms-page] :hover { outline: 1px dashed #e64a91; outline-offset: -1px; }
 .visual-repeater-editor {
   display: grid;
   gap: 0.65rem;

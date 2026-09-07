@@ -80,7 +80,7 @@ function siteHref(href: string, chrome?: SiteChrome): string {
 function SiteHeader({ chrome }: { chrome: SiteChrome }) {
   const isPartners = chrome.variant === 'partners';
   return (
-    <nav className="nav-wrap" aria-label="Main navigation">
+    <nav className="nav-wrap" data-cms-chrome="header" aria-label="Main navigation">
       <a href={isPartners ? '/' : '#top'} className="brand brand-image" aria-label="INFOStorage home">
         <span className={`brand-logo-frame ${isPartners ? 'partner-brand-logo-frame' : ''}`}>
           <img className="brand-logo" src={chrome.site.logo} alt="INFOStorage Corporation" />
@@ -88,7 +88,7 @@ function SiteHeader({ chrome }: { chrome: SiteChrome }) {
       </a>
       <div className="desktop-links">
         {chrome.navItems.filter((item) => item.enabled !== false).map((item) => (
-          <a className={isPartners && item.href === '/partners' ? 'nav-active' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{item.label}</a>
+          <a data-cms-item={item.id} className={isPartners && item.href === '/partners' ? 'nav-active' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{item.label}</a>
         ))}
       </div>
       <a className="nav-cta" href={siteHref(chrome.headerCta.href, chrome)}>{chrome.headerCta.label} <ArrowUpRight size={16} strokeWidth={2.1} /></a>
@@ -115,13 +115,13 @@ function nodeClasses(node: BuilderNode, editable?: boolean, selectedNodeId?: str
 
 function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropNode, onDragStartNode, chrome }: Omit<PageBuilderRendererProps, 'page' | 'slot'> & { node: BuilderNode }) {
   const className = nodeClasses(node, editable, selectedNodeId);
-  const interactions = editable ? {
+  const interactions = { 'data-cms-node': node.id, ...(editable ? {
     draggable: true,
     onClick: (event: React.MouseEvent<HTMLElement>) => { event.preventDefault(); event.stopPropagation(); onSelectNode?.(node.id); },
     onDragStart: (event: React.DragEvent<HTMLElement>) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-infostorage-builder-node', node.id); onDragStartNode?.(node.id); },
     onDragOver: (event: React.DragEvent<HTMLElement>) => event.preventDefault(),
     onDrop: (event: React.DragEvent<HTMLElement>) => { event.preventDefault(); event.stopPropagation(); onDropNode?.(node.id); },
-  } : {};
+  } : {}) };
   const children = node.children.map((child) => <BuilderNodeView key={child.id} node={child} editable={editable} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onDropNode={onDropNode} onDragStartNode={onDragStartNode} chrome={chrome} />);
 
   if (node.type === 'brand_hero') {
@@ -171,7 +171,7 @@ function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropN
   if (node.type === 'spacer') return <div className={`${className} page-builder-spacer-${prop(node, 'size', 'regular')}`} aria-hidden="true" {...interactions} />;
   if (node.type === 'columns') { const columns = Math.min(Math.max(Math.round(numberProp(node, 'columns', 2)), 1), 3); return <div className={`${className} page-builder-columns-${columns}`} {...interactions}>{children}</div>; }
   const label = prop(node, 'label');
-  return createElement(node.type === 'card' ? 'article' : node.type === 'section' ? 'section' : 'div', { className, ...interactions }, label && editable ? <span className="page-builder-editor-label">{label}</span> : null, children);
+  return createElement(node.type === 'card' ? 'article' : node.type === 'section' ? 'section' : 'div', { className, ...interactions }, label && editable ? <span className="page-builder-editor-label" data-cms-editor-only="">{label}</span> : null, children);
 }
 
 export function PageBuilderRenderer(props: PageBuilderRendererProps) {

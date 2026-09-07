@@ -35,12 +35,12 @@ export function PageCssStyle({ css, preview }: { css?: string; preview?: boolean
 export function CmsSitePage({ kind, page, chrome, style, previewCss, ...interactions }: CmsSitePageProps) {
   const className = kind === 'partners' ? 'partner-page' : 'site-shell';
   return (
-    <main className={className} style={style} data-cms-page-preview={previewCss ? '' : undefined}>
+    <main className={className} style={style} data-cms-page="" data-cms-page-preview={previewCss ? '' : undefined}>
       <PageCssStyle css={page?.customCss} preview={previewCss} />
       {BUILDER_SLOTS.map((slot) => (
         <PageBuilderRenderer key={slot.id} page={page} slot={slot.id} chrome={chrome} {...interactions} />
       ))}
-      <footer className="site-footer">
+      <footer className="site-footer" data-cms-chrome="footer">
         <a href={kind === 'partners' ? '/' : '#top'} className={`brand footer-brand ${kind === 'partners' ? 'partner-footer-brand' : ''}`} aria-label={kind === 'partners' ? 'INFOStorage home' : 'Back to top'}>
           <img className="footer-logo" src={chrome.site.logo} alt="INFOStorage Corporation" />
         </a>
