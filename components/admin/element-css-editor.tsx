@@ -5,6 +5,16 @@ import { Code2, Copy, MousePointer2 } from 'lucide-react';
 import { blockCssSelector, elementSelector, readElementCss, savedElementSelectors, writeElementCss } from '@/lib/element-css';
 
 type Target = { selector: string; label: string };
+const LIVE_ONLY_TARGETS: Target[] = [
+  { selector: 'html', label: 'Document · html (live page only)' },
+  { selector: 'body', label: 'Document body · body (live page only)' },
+  { selector: '.site-chatbot', label: 'Live chat widget · .site-chatbot (live page only)' },
+  { selector: '.chatbot-launcher', label: 'Chat launcher · .chatbot-launcher (live page only)' },
+  { selector: '.chatbot-panel', label: 'Chat panel · .chatbot-panel (live page only)' },
+  { selector: '.chatbot-header', label: 'Chat header · .chatbot-header (live page only)' },
+  { selector: '.chatbot-thread', label: 'Chat messages · .chatbot-thread (live page only)' },
+  { selector: '.chatbot-composer', label: 'Chat composer · .chatbot-composer (live page only)' },
+];
 type Props = {
   canvasRef: RefObject<HTMLDivElement | null>;
   css: string;
@@ -84,8 +94,9 @@ export function ElementCssEditor({ canvasRef, css, selectedNodeId, onChange }: P
       setError((caught as Error).message);
     }
   };
-  const extraTargets = savedElementSelectors(css).filter((item) => item !== '.site-chatbot' && !targets.some((target) => target.selector === item));
-  if (selector !== '.site-chatbot' && !targets.some((item) => item.selector === selector) && !extraTargets.includes(selector)) extraTargets.push(selector);
+  const reserved = new Set(LIVE_ONLY_TARGETS.map((target) => target.selector));
+  const extraTargets = savedElementSelectors(css).filter((item) => !reserved.has(item) && !targets.some((target) => target.selector === item));
+  if (!reserved.has(selector) && !targets.some((item) => item.selector === selector) && !extraTargets.includes(selector)) extraTargets.push(selector);
 
   return (
     <section className="visual-element-css visual-page-css" aria-label="Element CSS editor">
@@ -96,7 +107,7 @@ export function ElementCssEditor({ canvasRef, css, selectedNodeId, onChange }: P
       <label className="visual-field"><span>Element</span><select value={selector} onChange={(event) => { choose(event.target.value); setPicking(false); }}>
         {targets.map((target) => <option key={target.selector} value={target.selector}>{target.label}</option>)}
         {extraTargets.map((target) => <option key={target} value={target}>Saved selector · {target}</option>)}
-        <option value=".site-chatbot">Live chat widget · .site-chatbot (live page only)</option>
+        {LIVE_ONLY_TARGETS.map((target) => <option key={target.selector} value={target.selector}>{target.label}</option>)}
       </select></label>
       <div className="visual-css-selector"><code>{selector}</code><button type="button" className="admin-btn admin-btn-ghost" onClick={() => { void navigator.clipboard.writeText(selector).then(() => setNotice('Selector copied.'), () => setError('Select and copy the selector above.')); }}><Copy size={14} /> Copy selector</button></div>
       <label className="visual-field"><span>CSS rules</span><textarea aria-label="Selected element CSS" className="visual-page-css-input" value={draft} spellCheck={false} onChange={(event) => changeRules(event.target.value)} /></label>
