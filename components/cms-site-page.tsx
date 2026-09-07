@@ -2,14 +2,15 @@
 
 import { type CSSProperties } from 'react';
 import { PageBuilderRenderer, type SiteChrome } from '@/components/page-builder-renderer';
-import { type BuilderPage, BUILDER_SLOTS, normalisePageCss } from '@/lib/page-builder';
+import { type BuilderPage, BUILDER_SLOTS, hasBuilderNodeType, normalisePageCss } from '@/lib/page-builder';
 
 type BuilderInteractions = {
   editable?: boolean;
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string) => void;
-  onDropNode?: (targetNodeId: string) => void;
+  onDropNode?: (targetNodeId: string, mode?: 'before' | 'inside') => void;
   onDragStartNode?: (nodeId: string) => void;
+  onUpdateNodeProp?: (nodeId: string, key: string, value: string) => void;
 };
 
 type CmsSitePageProps = BuilderInteractions & {
@@ -40,13 +41,13 @@ export function CmsSitePage({ kind, page, chrome, style, previewCss, ...interact
       {BUILDER_SLOTS.map((slot) => (
         <PageBuilderRenderer key={slot.id} page={page} slot={slot.id} chrome={chrome} {...interactions} />
       ))}
-      <footer className="site-footer" data-cms-chrome="footer">
+      {!page?.settings.hideDefaultFooter && !hasBuilderNodeType(page, 'site_footer') && <footer className="site-footer" data-cms-chrome="footer">
         <a href={kind === 'partners' ? '/' : '#top'} className={`brand footer-brand ${kind === 'partners' ? 'partner-footer-brand' : ''}`} aria-label={kind === 'partners' ? 'INFOStorage home' : 'Back to top'}>
           <img className="footer-logo" src={chrome.site.logo} alt="INFOStorage Corporation" />
         </a>
         <p>{chrome.footer?.address ?? chrome.site.address}</p>
         <span>{chrome.footer?.copyright ?? ''}</span>
-      </footer>
+      </footer>}
     </main>
   );
 }

@@ -27,6 +27,7 @@ type DocumentRow = {
   created_at: string;
   updated_at: string;
   published_at: string | null;
+  scheduled_at: string | null;
 };
 
 type RevisionRow = {
@@ -46,6 +47,8 @@ type MediaRow = {
   object_key: string;
   filename: string;
   alt_text: string;
+  title_text: string;
+  caption: string;
   mime_type: string;
   byte_size: number;
   created_at: string;
@@ -74,7 +77,7 @@ type ChatMessageRow = {
   created_at: string;
 };
 
-const MAX_JSON_BYTES = 128 * 1024;
+const MAX_JSON_BYTES = 512 * 1024;
 const MAX_PAGE_CSS_CHARS = 80_000;
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 const MAX_CHAT_MESSAGE_CHARS = 2_000;
@@ -91,8 +94,13 @@ const ALLOWED_MEDIA_EXTENSIONS: Record<string, readonly string[]> = {
   'application/pdf': ['pdf'],
 };
 const BUILDER_NODE_TYPES = new Set([
-  'section', 'container', 'columns', 'column', 'card', 'heading', 'text',
-  'image', 'button', 'divider', 'spacer', 'brand_hero', 'split_intro',
+  'section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'heading', 'text', 'rich_text',
+  'image', 'video', 'icon', 'button', 'link', 'list', 'divider', 'spacer',
+  'badge', 'accordion', 'tabs', 'modal', 'alert', 'tooltip', 'cta',
+  'feature_grid', 'testimonials', 'statistics', 'pricing', 'faq',
+  'site_header', 'menu', 'breadcrumb', 'site_footer', 'form', 'input',
+  'textarea_field', 'select_field', 'checkbox', 'radio_group', 'submit',
+  'brand_hero', 'split_intro',
   'principle_grid', 'solution_grid', 'continuity_panel', 'service_list',
   'tag_band', 'contact_panel', 'partner_directory', 'logo_grid', 'method_list',
   'home_intro', 'partner_contact',
@@ -100,15 +108,45 @@ const BUILDER_NODE_TYPES = new Set([
 const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
   section: new Set(['label']),
   container: new Set(['label']),
+  row: new Set(['label']),
   columns: new Set(['columns']),
   column: new Set(['label']),
+  grid: new Set(['columns', 'label']),
   card: new Set(['label']),
   heading: new Set(['text', 'level']),
   text: new Set(['text']),
-  image: new Set(['src', 'alt']),
+  rich_text: new Set(['text']),
+  image: new Set(['src', 'alt', 'title', 'caption']),
+  video: new Set(['src', 'title', 'poster', 'controls']),
+  icon: new Set(['name', 'label', 'size']),
   button: new Set(['label', 'href', 'variant']),
+  link: new Set(['label', 'href', 'external']),
+  list: new Set(['items', 'ordered']),
   divider: new Set(['label']),
   spacer: new Set(['size']),
+  badge: new Set(['text']),
+  accordion: new Set(['items']),
+  tabs: new Set(['items']),
+  modal: new Set(['triggerLabel', 'title', 'body']),
+  alert: new Set(['title', 'body', 'variant']),
+  tooltip: new Set(['label', 'tip']),
+  cta: new Set(['eyebrow', 'heading', 'body', 'primaryLabel', 'primaryHref', 'secondaryLabel', 'secondaryHref']),
+  feature_grid: new Set(['kicker', 'heading', 'body', 'items']),
+  testimonials: new Set(['kicker', 'heading', 'items']),
+  statistics: new Set(['kicker', 'heading', 'items']),
+  pricing: new Set(['kicker', 'heading', 'items']),
+  faq: new Set(['kicker', 'heading', 'items']),
+  site_header: new Set(['useGlobal', 'logo', 'mobileLogo', 'logoAlt', 'logoWidth', 'mobileLogoWidth', 'logoAlignment', 'logoSpacing', 'links', 'ctaLabel', 'ctaHref']),
+  menu: new Set(['label', 'items']),
+  breadcrumb: new Set(['items']),
+  site_footer: new Set(['useGlobal', 'logo', 'logoAlt', 'address', 'copyright', 'links']),
+  form: new Set(['title', 'action', 'method', 'successMessage']),
+  input: new Set(['label', 'name', 'placeholder', 'inputType', 'required']),
+  textarea_field: new Set(['label', 'name', 'placeholder', 'required', 'rows']),
+  select_field: new Set(['label', 'name', 'options', 'required']),
+  checkbox: new Set(['label', 'name', 'required']),
+  radio_group: new Set(['label', 'name', 'options', 'required']),
+  submit: new Set(['label']),
   brand_hero: new Set(['variant', 'eyebrow', 'title', 'accent', 'body', 'primaryLabel', 'primaryHref', 'secondaryLabel', 'secondaryHref', 'logo', 'capabilities']),
   home_intro: new Set(['kicker', 'heading', 'accent', 'body', 'linkLabel', 'linkHref', 'items']),
   split_intro: new Set(['kicker', 'heading', 'accent', 'body', 'linkLabel', 'linkHref']),
@@ -124,7 +162,18 @@ const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
   partner_contact: new Set(['eyebrow', 'heading', 'body', 'ctaLabel', 'ctaHref']),
 };
 const BUILDER_CONTAINER_TYPES = new Set([
-  'section', 'container', 'columns', 'column', 'card',
+  'section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'form',
+  'site_header', 'site_footer',
+]);
+const BUILDER_ADVANCED_STYLE_KEYS = new Set([
+  'display', 'flexDirection', 'justifyContent', 'alignItems', 'flexWrap',
+  'gridTemplateColumns', 'gridTemplateRows', 'position',
+  'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'gap',
+  'customWidth', 'minWidth', 'maxWidth', 'height', 'minHeight', 'maxHeight',
+  'backgroundColor', 'backgroundImage', 'backgroundGradient', 'color',
+  'borderStyle', 'borderWidth', 'borderColor', 'borderRadius', 'boxShadow', 'opacity',
+  'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign', 'textTransform',
 ]);
 const BUILDER_SLOTS = new Set([
   'afterHero', 'afterApproach', 'afterSolutions', 'afterServices', 'beforeContact', 'afterContent',
@@ -232,6 +281,18 @@ function validateSlug(value: unknown): string {
   return slug;
 }
 
+function validateAdvancedStyles(value: unknown): void {
+  if (value === undefined) return;
+  if (!isRecord(value) || Object.keys(value).length > BUILDER_ADVANCED_STYLE_KEYS.size) {
+    throw new HttpError(400, 'Advanced builder styles are invalid.', 'invalid_input');
+  }
+  for (const [key, styleValue] of Object.entries(value)) {
+    if (!BUILDER_ADVANCED_STYLE_KEYS.has(key) || typeof styleValue !== 'string' || styleValue.length > 240 || /[{};<>]/.test(styleValue)) {
+      throw new HttpError(400, 'An advanced builder style is invalid.', 'invalid_input');
+    }
+  }
+}
+
 function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): void {
   if (!isRecord(value) || depth > 8) throw new HttpError(400, 'A builder block has an invalid structure.', 'invalid_input');
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value.id)) throw new HttpError(400, 'A builder block id is invalid.', 'invalid_input');
@@ -242,14 +303,21 @@ function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): v
   if (!isRecord(value.props) || Object.keys(value.props).length > 20) throw new HttpError(400, 'Builder block properties are invalid.', 'invalid_input');
   for (const [key, property] of Object.entries(value.props)) {
     if (!BUILDER_PROP_KEYS[type].has(key)) throw new HttpError(400, 'A builder property is not supported for this block.', 'invalid_input');
-    if (!(typeof property === 'string' || typeof property === 'boolean' || (typeof property === 'number' && Number.isFinite(property))) || (typeof property === 'string' && property.length > 2_000)) throw new HttpError(400, 'A builder property value is invalid.', 'invalid_input');
+    if (!(typeof property === 'string' || typeof property === 'boolean' || (typeof property === 'number' && Number.isFinite(property))) || (typeof property === 'string' && property.length > 10_000)) throw new HttpError(400, 'A builder property value is invalid.', 'invalid_input');
   }
   if (type === 'heading' && value.props.level !== undefined && (!Number.isInteger(value.props.level) || (value.props.level as number) < 1 || (value.props.level as number) > 4)) throw new HttpError(400, 'A heading level is invalid.', 'invalid_input');
-  if (type === 'columns' && value.props.columns !== undefined && (!Number.isInteger(value.props.columns) || (value.props.columns as number) < 1 || (value.props.columns as number) > 3)) throw new HttpError(400, 'A column count is invalid.', 'invalid_input');
+  if ((type === 'columns' || type === 'grid') && value.props.columns !== undefined && (!Number.isInteger(value.props.columns) || (value.props.columns as number) < 1 || (value.props.columns as number) > 6)) throw new HttpError(400, 'A column count is invalid.', 'invalid_input');
   if (type === 'button' && value.props.variant !== undefined && !['primary', 'secondary'].includes(value.props.variant as string)) throw new HttpError(400, 'A button variant is invalid.', 'invalid_input');
   if (type === 'spacer' && value.props.size !== undefined && !['compact', 'regular', 'spacious'].includes(value.props.size as string)) throw new HttpError(400, 'A spacer size is invalid.', 'invalid_input');
+  if (type === 'alert' && value.props.variant !== undefined && !['info', 'warning', 'success'].includes(value.props.variant as string)) throw new HttpError(400, 'An alert variant is invalid.', 'invalid_input');
+  if (type === 'form' && value.props.method !== undefined && !['get', 'post'].includes(value.props.method as string)) throw new HttpError(400, 'A form method is invalid.', 'invalid_input');
   if (!isRecord(value.styles) || !isRecord(value.responsive)) throw new HttpError(400, 'Builder styles are invalid.', 'invalid_input');
   if (!['default', 'muted', 'brand', 'gradient'].includes(value.styles.tone as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.styles.padding as string) || !['inherit', 'left', 'center', 'right'].includes(value.styles.align as string) || !['inherit', 'content', 'wide', 'full'].includes(value.styles.width as string) || !['none', 'sm', 'md', 'lg'].includes(value.styles.radius as string) || !['none', 'soft', 'strong'].includes(value.styles.border as string) || !['none', 'soft', 'lifted'].includes(value.styles.shadow as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.styles.gap as string) || !['none', 'reveal', 'float'].includes(value.styles.motion as string) || !['none', 'lift'].includes(value.styles.hover as string) || !['all', 'desktop', 'mobile'].includes(value.responsive.visibility as string) || !['inherit', 1, 2, 3, 4].includes(value.responsive.tabletColumns as string | number) || !['inherit', 1, 2, 3, 4].includes(value.responsive.mobileColumns as string | number) || !['inherit', 'left', 'center', 'right'].includes(value.responsive.tabletAlign as string) || !['inherit', 'left', 'center', 'right'].includes(value.responsive.mobileAlign as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.responsive.tabletPadding as string) || !['inherit', 'compact', 'regular', 'spacious'].includes(value.responsive.mobilePadding as string)) throw new HttpError(400, 'A builder layout setting is not supported.', 'invalid_input');
+  validateAdvancedStyles(value.styles.advanced);
+  validateAdvancedStyles(value.responsive.tablet);
+  validateAdvancedStyles(value.responsive.mobile);
+  if (value.styles.customClass !== undefined && (typeof value.styles.customClass !== 'string' || value.styles.customClass.length > 520 || value.styles.customClass.split(/\s+/).filter(Boolean).some((item) => !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(item)))) throw new HttpError(400, 'A custom class is invalid.', 'invalid_input');
+  if (value.styles.elementId !== undefined && (typeof value.styles.elementId !== 'string' || (value.styles.elementId !== '' && !/^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(value.styles.elementId)))) throw new HttpError(400, 'An element id is invalid.', 'invalid_input');
   if (!Array.isArray(value.children) || value.children.length > 30) throw new HttpError(400, 'Builder block children are invalid.', 'invalid_input');
   if (!BUILDER_CONTAINER_TYPES.has(type) && value.children.length > 0) throw new HttpError(400, 'This builder block cannot contain child blocks.', 'invalid_input');
   for (const child of value.children) validateBuilderNode(child, depth + 1, ids);
@@ -257,6 +325,18 @@ function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): v
 
 function validateBuilderPage(value: JsonRecord): void {
   if (value.version !== 1 || !isRecord(value.slots)) throw new HttpError(400, 'The builder page schema is invalid.', 'invalid_input');
+  if (value.settings !== undefined) {
+    if (!isRecord(value.settings)) throw new HttpError(400, 'Page settings are invalid.', 'invalid_input');
+    const allowed = new Set(['seoTitle', 'seoDescription', 'socialImage', 'hideDefaultHeader', 'hideDefaultFooter']);
+    for (const [key, setting] of Object.entries(value.settings)) {
+      if (!allowed.has(key)) throw new HttpError(400, 'A page setting is not supported.', 'invalid_input');
+      if (key === 'hideDefaultHeader' || key === 'hideDefaultFooter') {
+        if (typeof setting !== 'boolean') throw new HttpError(400, 'Page visibility settings must be true or false.', 'invalid_input');
+      } else if (typeof setting !== 'string' || setting.length > (key === 'seoTitle' ? 160 : key === 'seoDescription' ? 320 : 2_000)) {
+        throw new HttpError(400, 'A page setting is invalid.', 'invalid_input');
+      }
+    }
+  }
   if (value.customCss !== undefined) {
     if (typeof value.customCss !== 'string' || value.customCss.length > MAX_PAGE_CSS_CHARS) {
       throw new HttpError(400, 'Page CSS must be plain text shorter than 80,000 characters.', 'invalid_input');
@@ -584,6 +664,7 @@ function formatDocument(document: DocumentRow): JsonRecord {
     createdAt: document.created_at,
     updatedAt: document.updated_at,
     publishedAt: document.published_at,
+    scheduledAt: document.scheduled_at,
   };
 }
 
@@ -606,6 +687,8 @@ function formatMedia(media: MediaRow, request: Request): JsonRecord {
     id: media.id,
     filename: media.filename,
     altText: media.alt_text,
+    title: media.title_text,
+    caption: media.caption,
     mimeType: media.mime_type,
     byteSize: media.byte_size,
     createdAt: media.created_at,
@@ -642,7 +725,7 @@ function formatChatMessage(message: ChatMessageRow): JsonRecord {
 async function getDocument(id: string, env: CmsEnv): Promise<DocumentRow> {
   const document = await env.CMS_DB.prepare(
     `SELECT id, type, slug, title, status, data_json, published_data_json,
-      current_revision, published_revision, created_at, updated_at, published_at
+      current_revision, published_revision, created_at, updated_at, published_at, scheduled_at
      FROM cms_documents WHERE id = ?`,
   )
     .bind(id)
@@ -755,7 +838,7 @@ async function listDocuments(request: Request, env: CmsEnv): Promise<Response> {
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const result = await env.CMS_DB.prepare(
     `SELECT id, type, slug, title, status, data_json, published_data_json,
-      current_revision, published_revision, sort_order, created_at, updated_at, published_at
+      current_revision, published_revision, sort_order, created_at, updated_at, published_at, scheduled_at
      FROM cms_documents ${where} ORDER BY sort_order ASC, updated_at DESC LIMIT ?`,
   )
     .bind(...values)
@@ -847,7 +930,7 @@ async function publishDocument(id: string, user: CmsUser, env: CmsEnv): Promise<
   await env.CMS_DB.prepare(
     `UPDATE cms_documents
      SET status = 'published', published_data_json = data_json, published_revision = current_revision,
-       published_by = ?, published_at = ?, updated_at = ?
+       published_by = ?, published_at = ?, scheduled_at = NULL, updated_at = ?
      WHERE id = ?`,
   )
     .bind(user.id, publishedAt, publishedAt, id)
@@ -862,7 +945,7 @@ async function unpublishDocument(id: string, user: CmsUser, env: CmsEnv): Promis
   await env.CMS_DB.prepare(
     `UPDATE cms_documents
      SET status = 'draft', published_data_json = NULL, published_revision = NULL,
-       published_by = NULL, published_at = NULL, updated_by = ?, updated_at = ?
+       published_by = NULL, published_at = NULL, scheduled_at = NULL, updated_by = ?, updated_at = ?
      WHERE id = ?`,
   )
     .bind(user.id, updatedAt, id)
@@ -877,13 +960,77 @@ async function archiveDocument(id: string, user: CmsUser, env: CmsEnv): Promise<
   await env.CMS_DB.prepare(
     `UPDATE cms_documents
      SET status = 'archived', published_data_json = NULL, published_revision = NULL,
-       published_by = NULL, published_at = NULL, updated_by = ?, updated_at = ?
+       published_by = NULL, published_at = NULL, scheduled_at = NULL, updated_by = ?, updated_at = ?
      WHERE id = ?`,
   )
     .bind(user.id, updatedAt, id)
       .run();
   await logAudit(env, { userId: user.id, action: 'document.archive', resourceType: 'document', resourceId: id });
   return json({ document: formatDocument(await getDocument(id, env)) });
+}
+
+async function restoreArchivedDocument(id: string, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const document = await getDocument(id, env);
+  if (document.status !== 'archived') {
+    throw new HttpError(409, 'Only archived entries can be restored.', 'not_archived');
+  }
+  const updatedAt = now();
+  await env.CMS_DB.prepare(
+    `UPDATE cms_documents
+     SET status = 'draft', updated_by = ?, updated_at = ?
+     WHERE id = ?`,
+  )
+    .bind(user.id, updatedAt, id)
+    .run();
+  await logAudit(env, { userId: user.id, action: 'document.restore', resourceType: 'document', resourceId: id, detail: document.title });
+  return json({ document: formatDocument(await getDocument(id, env)) });
+}
+
+async function scheduleDocument(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const document = await getDocument(id, env);
+  if (document.status === 'archived') {
+    throw new HttpError(409, 'Restore this archived entry before scheduling it.', 'archived');
+  }
+  const body = await readJson(request);
+  if (body.publishAt === null) {
+    const updatedAt = now();
+    await env.CMS_DB.prepare(
+      'UPDATE cms_documents SET scheduled_at = NULL, updated_by = ?, updated_at = ? WHERE id = ?',
+    ).bind(user.id, updatedAt, id).run();
+    await logAudit(env, { userId: user.id, action: 'document.schedule.cancel', resourceType: 'document', resourceId: id, detail: document.title });
+    return json({ document: formatDocument(await getDocument(id, env)) });
+  }
+
+  const requested = asString(body.publishAt, 'Publication time', 64);
+  const publishAt = new Date(requested);
+  if (Number.isNaN(publishAt.getTime()) || publishAt.getTime() <= Date.now() + 60_000) {
+    throw new HttpError(400, 'Choose a valid publication time at least one minute in the future.', 'invalid_input');
+  }
+  const scheduledAt = publishAt.toISOString();
+  const updatedAt = now();
+  await env.CMS_DB.prepare(
+    'UPDATE cms_documents SET scheduled_at = ?, updated_by = ?, updated_at = ? WHERE id = ?',
+  ).bind(scheduledAt, user.id, updatedAt, id).run();
+  await logAudit(env, { userId: user.id, action: 'document.schedule', resourceType: 'document', resourceId: id, detail: `${document.title} at ${scheduledAt}` });
+  return json({ document: formatDocument(await getDocument(id, env)) });
+}
+
+async function publishScheduledDocuments(env: CmsEnv): Promise<void> {
+  const publishedAt = now();
+  const due = await env.CMS_DB.prepare(
+    `SELECT id FROM cms_documents
+     WHERE scheduled_at IS NOT NULL AND scheduled_at <= ? AND status != 'archived'`,
+  ).bind(publishedAt).all<{ id: string }>();
+  if (!due.results.length) return;
+  await env.CMS_DB.prepare(
+    `UPDATE cms_documents
+     SET status = 'published', published_data_json = data_json, published_revision = current_revision,
+       published_by = updated_by, published_at = ?, scheduled_at = NULL, updated_at = ?
+     WHERE scheduled_at IS NOT NULL AND scheduled_at <= ? AND status != 'archived'`,
+  ).bind(publishedAt, publishedAt, publishedAt).run();
+  for (const document of due.results) {
+    await logAudit(env, { userId: null, action: 'document.publish.scheduled', resourceType: 'document', resourceId: document.id, detail: publishedAt });
+  }
 }
 
 async function listRevisions(id: string, env: CmsEnv): Promise<Response> {
@@ -1190,10 +1337,20 @@ async function createUser(request: Request, actor: CmsUser, env: CmsEnv): Promis
 }
 
 async function listMedia(request: Request, env: CmsEnv): Promise<Response> {
-  const result = await env.CMS_DB.prepare(
-    `SELECT id, object_key, filename, alt_text, mime_type, byte_size, created_at
-     FROM cms_media ORDER BY created_at DESC LIMIT 100`,
-  ).all<MediaRow>();
+  const search = new URL(request.url).searchParams.get('search')?.trim().slice(0, 120) ?? '';
+  const query = search
+    ? env.CMS_DB.prepare(
+      `SELECT id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_at
+       FROM cms_media
+       WHERE filename LIKE ? ESCAPE '\\' OR alt_text LIKE ? ESCAPE '\\' OR title_text LIKE ? ESCAPE '\\' OR caption LIKE ? ESCAPE '\\'
+       ORDER BY created_at DESC LIMIT 100`,
+    )
+    : env.CMS_DB.prepare(
+      `SELECT id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_at
+       FROM cms_media ORDER BY created_at DESC LIMIT 100`,
+    );
+  const escaped = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+  const result = search ? await query.bind(escaped, escaped, escaped, escaped).all<MediaRow>() : await query.all<MediaRow>();
   return json({ media: result.results.map((media) => formatMedia(media, request)) });
 }
 
@@ -1220,6 +1377,8 @@ function validateMediaFile(filename: string, mimeType: string): void {
 async function uploadMedia(request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
   const filename = sanitizeFilename(asString(request.headers.get('x-file-name'), 'File name', 160));
   const altText = asOptionalString(request.headers.get('x-alt-text') ?? '', 240) ?? '';
+  const titleText = asOptionalString(request.headers.get('x-title') ?? '', 240) ?? '';
+  const caption = asOptionalString(request.headers.get('x-caption') ?? '', 500) ?? '';
   const mimeType = request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() ?? '';
   validateMediaFile(filename, mimeType);
 
@@ -1242,10 +1401,10 @@ async function uploadMedia(request: Request, user: CmsUser, env: CmsEnv): Promis
 
   try {
     await env.CMS_DB.prepare(
-      `INSERT INTO cms_media (id, object_key, filename, alt_text, mime_type, byte_size, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO cms_media (id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(id, objectKey, filename, altText, mimeType, contentLength, user.id)
+      .bind(id, objectKey, filename, altText, titleText, caption, mimeType, contentLength, user.id)
       .run();
   } catch (error) {
     await env.CMS_MEDIA.delete(objectKey);
@@ -1253,7 +1412,7 @@ async function uploadMedia(request: Request, user: CmsUser, env: CmsEnv): Promis
   }
 
   const media = await env.CMS_DB.prepare(
-    `SELECT id, object_key, filename, alt_text, mime_type, byte_size, created_at
+    `SELECT id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_at
      FROM cms_media WHERE id = ?`,
   )
     .bind(id)
@@ -1265,7 +1424,7 @@ async function uploadMedia(request: Request, user: CmsUser, env: CmsEnv): Promis
 
 async function serveMedia(id: string, env: CmsEnv): Promise<Response> {
   const media = await env.CMS_DB.prepare(
-    `SELECT id, object_key, filename, alt_text, mime_type, byte_size, created_at
+    `SELECT id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_at
      FROM cms_media WHERE id = ?`,
   )
     .bind(id)
@@ -1285,7 +1444,7 @@ async function serveMedia(id: string, env: CmsEnv): Promise<Response> {
 
 async function deleteMedia(id: string, user: CmsUser, env: CmsEnv): Promise<Response> {
   const media = await env.CMS_DB.prepare(
-    `SELECT id, object_key, filename, alt_text, mime_type, byte_size, created_at
+    `SELECT id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_at
      FROM cms_media WHERE id = ?`,
   )
     .bind(id)
@@ -1295,6 +1454,24 @@ async function deleteMedia(id: string, user: CmsUser, env: CmsEnv): Promise<Resp
   await env.CMS_DB.prepare('DELETE FROM cms_media WHERE id = ?').bind(id).run();
   await logAudit(env, { userId: user.id, action: 'media.delete', resourceType: 'media', resourceId: id, detail: media.filename });
   return json({ deleted: true });
+}
+
+async function updateMedia(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const existing = await env.CMS_DB.prepare(
+    `SELECT id, object_key, filename, alt_text, title_text, caption, mime_type, byte_size, created_at
+     FROM cms_media WHERE id = ?`,
+  ).bind(id).first<MediaRow>();
+  if (!existing) throw new HttpError(404, 'Media was not found.', 'not_found');
+  const body = await readJson(request);
+  const altText = body.altText === undefined ? existing.alt_text : (asOptionalString(body.altText, 240) ?? '');
+  const titleText = body.title === undefined ? existing.title_text : (asOptionalString(body.title, 240) ?? '');
+  const caption = body.caption === undefined ? existing.caption : (asOptionalString(body.caption, 500) ?? '');
+  await env.CMS_DB.prepare(
+    'UPDATE cms_media SET alt_text = ?, title_text = ?, caption = ? WHERE id = ?',
+  ).bind(altText, titleText, caption, id).run();
+  const updated = { ...existing, alt_text: altText, title_text: titleText, caption };
+  await logAudit(env, { userId: user.id, action: 'media.update', resourceType: 'media', resourceId: id, detail: existing.filename });
+  return json({ media: formatMedia(updated, request) });
 }
 
 async function publicContent(parts: string[], request: Request, env: CmsEnv): Promise<Response> {
@@ -1437,6 +1614,8 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     if (adminRoute.length === 2 && request.method === 'DELETE') return archiveDocument(documentId, user, env);
     if (adminRoute[2] === 'publish' && request.method === 'POST') return publishDocument(documentId, user, env);
     if (adminRoute[2] === 'unpublish' && request.method === 'POST') return unpublishDocument(documentId, user, env);
+    if (adminRoute[2] === 'schedule' && request.method === 'POST') return scheduleDocument(documentId, request, user, env);
+    if (adminRoute[2] === 'restore-archived' && request.method === 'POST') return restoreArchivedDocument(documentId, user, env);
     if (adminRoute[2] === 'restore' && adminRoute[3] && request.method === 'POST') {
       const revisionNumber = Number(adminRoute[3]);
       if (!Number.isInteger(revisionNumber) || revisionNumber < 1) {
@@ -1450,6 +1629,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     if (request.method === 'GET' && adminRoute.length === 1) return listMedia(request, env);
     requireRole(user, 'admin', 'editor');
     if (request.method === 'POST' && adminRoute.length === 1) return uploadMedia(request, user, env);
+    if (request.method === 'PATCH' && adminRoute.length === 2) return updateMedia(decodeURIComponent(adminRoute[1]), request, user, env);
     if (request.method === 'DELETE' && adminRoute.length === 2) return deleteMedia(decodeURIComponent(adminRoute[1]), user, env);
   }
 
@@ -1474,5 +1654,8 @@ export default {
       }));
       return withCors(json({ error: 'The CMS could not complete this request.', code: 'internal_error' }, { status: 500 }), request, env);
     }
+  },
+  async scheduled(_controller, env, context): Promise<void> {
+    context.waitUntil(publishScheduledDocuments(env));
   },
 } satisfies ExportedHandler<CmsEnv>;

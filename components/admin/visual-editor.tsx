@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   Box,
   Code2,
   ChevronDown,
@@ -11,6 +13,7 @@ import {
   Copy,
   GripVertical,
   Heading,
+  History as HistoryIcon,
   Image as ImageIcon,
   Layers3,
   Minus,
@@ -30,13 +33,16 @@ import { adminPath } from '@/lib/site-paths';
 import { CmsSitePage } from '@/components/cms-site-page';
 import { CustomPageLayout } from '@/components/custom-page-layout';
 import { ElementCssEditor } from '@/components/admin/element-css-editor';
+import { BuilderStyleControls } from '@/components/admin/builder-style-controls';
 import {
   appendBuilderNode,
   BUILDER_NODE_TYPES,
   BUILDER_SLOTS,
   cloneBuilderNode,
+  canContainBuilderChildren,
   createPageFromBrief,
   type BuilderNode,
+  type BuilderPage,
   type BuilderNodeType,
   createBuilderNode,
   duplicateBuilderNode,
@@ -71,6 +77,7 @@ type CmsDocument = {
   data: Record<string, unknown>;
   publishedData: Record<string, unknown> | null;
   updatedAt: string;
+  scheduledAt?: string | null;
 };
 
 type MediaAsset = {
@@ -82,7 +89,7 @@ type MediaAsset = {
 type PageKey = 'home' | 'partners';
 type Device = 'desktop' | 'tablet' | 'mobile';
 type FieldRef = { documentId: string; key: string };
-type HeaderLink = { id: string; label: string; href: string; enabled: boolean };
+type HeaderLink = { id: string; label: string; href: string; enabled: boolean; parentId?: string };
 
 type Layer = {
   id: string;
@@ -103,6 +110,7 @@ const PAGE_LAYERS: Record<PageKey, Layer[]> = {
     { id: 'navigation', label: 'Navigation', type: 'navigation', slug: 'main' },
   ],
 };
+type CmsRevision = { id: string; revisionNumber: number; title: string; note?: string; createdAt: string };
 
 const DEFAULT_DATA: Record<string, Record<string, unknown>> = {
   solution: { description: '', items: [] },
@@ -127,7 +135,50 @@ const DESIGN_BLOCKS: Array<{ type: BuilderNodeType; label: string; Icon: typeof 
   { type: 'partner_contact', label: 'Partner CTA', Icon: MousePointer2 },
 ];
 
-type BuilderField = { key: string; label: string; multiline?: boolean };
+const BUILDER_LIBRARY_GROUPS: Array<{ label: string; items: Array<{ type: BuilderNodeType; label: string; Icon: typeof Box }> }> = [
+  { label: 'Layout', items: [
+    { type: 'section', label: 'Section', Icon: Box }, { type: 'container', label: 'Container', Icon: Box },
+    { type: 'row', label: 'Row', Icon: Columns3 }, { type: 'columns', label: 'Columns', Icon: Columns3 },
+    { type: 'column', label: 'Column', Icon: Columns3 }, { type: 'grid', label: 'Grid', Icon: Columns3 },
+    { type: 'card', label: 'Card', Icon: Box }, { type: 'divider', label: 'Divider', Icon: Minus }, { type: 'spacer', label: 'Spacer', Icon: Plus },
+  ] },
+  { label: 'Content', items: [
+    { type: 'heading', label: 'Heading', Icon: Heading }, { type: 'text', label: 'Text', Icon: Text },
+    { type: 'rich_text', label: 'Rich text', Icon: Text }, { type: 'image', label: 'Image', Icon: ImageIcon },
+    { type: 'video', label: 'Video', Icon: ImageIcon }, { type: 'icon', label: 'Icon', Icon: ImageIcon },
+    { type: 'button', label: 'Button', Icon: MousePointer2 }, { type: 'link', label: 'Link', Icon: MousePointer2 },
+    { type: 'list', label: 'List', Icon: Text },
+  ] },
+  { label: 'Interface', items: [
+    { type: 'badge', label: 'Badge', Icon: Box }, { type: 'accordion', label: 'Accordion', Icon: Layers3 },
+    { type: 'tabs', label: 'Tabs', Icon: Layers3 }, { type: 'modal', label: 'Modal', Icon: Layers3 },
+    { type: 'alert', label: 'Alert', Icon: Box }, { type: 'tooltip', label: 'Tooltip', Icon: MousePointer2 },
+  ] },
+  { label: 'Marketing', items: [
+    { type: 'cta', label: 'CTA', Icon: MousePointer2 }, { type: 'feature_grid', label: 'Feature grid', Icon: Columns3 },
+    { type: 'testimonials', label: 'Testimonials', Icon: Text }, { type: 'statistics', label: 'Statistics', Icon: Columns3 },
+    { type: 'pricing', label: 'Pricing', Icon: Columns3 }, { type: 'faq', label: 'FAQ', Icon: Layers3 },
+    ...DESIGN_BLOCKS,
+  ] },
+  { label: 'Navigation', items: [
+    { type: 'site_header', label: 'Site header', Icon: Layers3 }, { type: 'menu', label: 'Menu', Icon: Layers3 },
+    { type: 'breadcrumb', label: 'Breadcrumb', Icon: Text }, { type: 'site_footer', label: 'Site footer', Icon: Layers3 },
+  ] },
+  { label: 'Forms', items: [
+    { type: 'form', label: 'Form', Icon: Box }, { type: 'input', label: 'Input', Icon: Text },
+    { type: 'textarea_field', label: 'Textarea', Icon: Text }, { type: 'select_field', label: 'Select', Icon: Text },
+    { type: 'checkbox', label: 'Checkbox', Icon: MousePointer2 }, { type: 'radio_group', label: 'Radio group', Icon: MousePointer2 },
+    { type: 'submit', label: 'Submit button', Icon: MousePointer2 },
+  ] },
+];
+
+type BuilderField = {
+  key: string;
+  label: string;
+  multiline?: boolean;
+  kind?: 'text' | 'number' | 'boolean' | 'select' | 'media';
+  options?: Array<{ value: string; label: string }>;
+};
 
 type RepeaterInput = { label: string; placeholder: string; multiline?: boolean; lineSeparator?: string };
 type DesignBlockRepeater = {
@@ -139,6 +190,41 @@ type DesignBlockRepeater = {
 };
 
 const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
+  site_header: [
+    { key: 'useGlobal', label: 'Use global logo and navigation', kind: 'boolean' }, { key: 'logo', label: 'Override logo', kind: 'media' }, { key: 'mobileLogo', label: 'Override mobile logo', kind: 'media' }, { key: 'logoAlt', label: 'Logo description' },
+    { key: 'logoWidth', label: 'Logo width' }, { key: 'mobileLogoWidth', label: 'Mobile logo width' }, { key: 'logoAlignment', label: 'Logo alignment', kind: 'select', options: [{ value: 'left', label: 'Left' }, { value: 'center', label: 'Center' }, { value: 'right', label: 'Right' }] }, { key: 'logoSpacing', label: 'Logo outer spacing' },
+    { key: 'links', label: 'Override links — “Label | URL” per line', multiline: true }, { key: 'ctaLabel', label: 'Button label' }, { key: 'ctaHref', label: 'Button destination' },
+  ],
+  site_footer: [
+    { key: 'useGlobal', label: 'Use global footer settings', kind: 'boolean' }, { key: 'logo', label: 'Override logo', kind: 'media' }, { key: 'logoAlt', label: 'Logo description' },
+    { key: 'address', label: 'Address' }, { key: 'copyright', label: 'Copyright' }, { key: 'links', label: 'Footer links — “Label | URL” per line', multiline: true },
+  ],
+  rich_text: [{ key: 'text', label: 'Rich text — blank line starts a paragraph', multiline: true }],
+  video: [{ key: 'src', label: 'Video URL' }, { key: 'poster', label: 'Poster image', kind: 'media' }, { key: 'title', label: 'Video title' }, { key: 'controls', label: 'Show playback controls', kind: 'boolean' }],
+  icon: [{ key: 'name', label: 'Icon', kind: 'select', options: ['database', 'network', 'server', 'laptop', 'shield', 'cloud', 'code', 'sparkles'].map((value) => ({ value, label: value[0].toUpperCase() + value.slice(1) })) }, { key: 'label', label: 'Accessible label' }, { key: 'size', label: 'Size in pixels', kind: 'number' }],
+  link: [{ key: 'label', label: 'Link label' }, { key: 'href', label: 'Destination' }, { key: 'external', label: 'Open in a new tab', kind: 'boolean' }],
+  list: [{ key: 'items', label: 'List items — one per line', multiline: true }, { key: 'ordered', label: 'Numbered list', kind: 'boolean' }],
+  badge: [{ key: 'text', label: 'Badge text' }],
+  accordion: [{ key: 'items', label: 'Items — “Question | Answer” per line', multiline: true }],
+  tabs: [{ key: 'items', label: 'Tabs — “Label | Content” per line', multiline: true }],
+  modal: [{ key: 'triggerLabel', label: 'Open button label' }, { key: 'title', label: 'Modal heading' }, { key: 'body', label: 'Modal content', multiline: true }],
+  alert: [{ key: 'title', label: 'Alert heading' }, { key: 'body', label: 'Alert message', multiline: true }, { key: 'variant', label: 'Treatment', kind: 'select', options: [{ value: 'info', label: 'Information' }, { value: 'warning', label: 'Warning' }, { value: 'success', label: 'Success' }] }],
+  tooltip: [{ key: 'label', label: 'Visible label' }, { key: 'tip', label: 'Tooltip text', multiline: true }],
+  cta: [{ key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'primaryLabel', label: 'Primary button label' }, { key: 'primaryHref', label: 'Primary destination' }, { key: 'secondaryLabel', label: 'Secondary button label' }, { key: 'secondaryHref', label: 'Secondary destination' }],
+  feature_grid: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'items', label: 'Features — “Title | Description” per line', multiline: true }],
+  testimonials: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'items', label: 'Testimonials — “Quote | Name | Role” per line', multiline: true }],
+  statistics: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'items', label: 'Statistics — “Value | Label” per line', multiline: true }],
+  pricing: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'items', label: 'Plans — “Name | Price | Feature; Feature | Button” per line', multiline: true }],
+  faq: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'items', label: 'Questions — “Question | Answer” per line', multiline: true }],
+  menu: [{ key: 'label', label: 'Menu name' }, { key: 'items', label: 'Links — “Label | URL” per line', multiline: true }],
+  breadcrumb: [{ key: 'items', label: 'Trail — “Label | URL” per line', multiline: true }],
+  form: [{ key: 'title', label: 'Form heading' }, { key: 'action', label: 'Submission URL' }, { key: 'method', label: 'Method', kind: 'select', options: [{ value: 'post', label: 'POST' }, { value: 'get', label: 'GET' }] }, { key: 'successMessage', label: 'Success message', multiline: true }],
+  input: [{ key: 'label', label: 'Field label' }, { key: 'name', label: 'Field name' }, { key: 'placeholder', label: 'Placeholder' }, { key: 'inputType', label: 'Input type', kind: 'select', options: ['text', 'email', 'tel', 'url', 'number', 'date'].map((value) => ({ value, label: value })) }, { key: 'required', label: 'Required field', kind: 'boolean' }],
+  textarea_field: [{ key: 'label', label: 'Field label' }, { key: 'name', label: 'Field name' }, { key: 'placeholder', label: 'Placeholder' }, { key: 'rows', label: 'Visible rows', kind: 'number' }, { key: 'required', label: 'Required field', kind: 'boolean' }],
+  select_field: [{ key: 'label', label: 'Field label' }, { key: 'name', label: 'Field name' }, { key: 'options', label: 'Options — one per line', multiline: true }, { key: 'required', label: 'Required field', kind: 'boolean' }],
+  checkbox: [{ key: 'label', label: 'Checkbox label' }, { key: 'name', label: 'Field name' }, { key: 'required', label: 'Required field', kind: 'boolean' }],
+  radio_group: [{ key: 'label', label: 'Group label' }, { key: 'name', label: 'Field name' }, { key: 'options', label: 'Options — one per line', multiline: true }, { key: 'required', label: 'Required field', kind: 'boolean' }],
+  submit: [{ key: 'label', label: 'Button label' }],
   brand_hero: [
     { key: 'variant', label: 'Hero style (home or partners)' }, { key: 'eyebrow', label: 'Eyebrow' }, { key: 'title', label: 'Heading' }, { key: 'accent', label: 'Heading accent' },
     { key: 'body', label: 'Supporting copy', multiline: true }, { key: 'primaryLabel', label: 'Primary button label' }, { key: 'primaryHref', label: 'Primary button destination' },
@@ -190,6 +276,15 @@ const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
 // compact value format for compatibility with the renderer, but present it as
 // simple rows and fields so an editor never needs to learn that syntax.
 const DESIGN_BLOCK_REPEATERS: Partial<Record<BuilderNodeType, DesignBlockRepeater>> = {
+  accordion: { key: 'items', label: 'Accordion items', itemLabel: 'item', inputs: [{ label: 'Question', placeholder: 'Add a question' }, { label: 'Answer', placeholder: 'Add the answer', multiline: true }] },
+  tabs: { key: 'items', label: 'Tabs', itemLabel: 'tab', inputs: [{ label: 'Tab label', placeholder: 'Overview' }, { label: 'Content', placeholder: 'Add tab content', multiline: true }] },
+  feature_grid: { key: 'items', label: 'Features', itemLabel: 'feature', inputs: [{ label: 'Title', placeholder: 'Feature title' }, { label: 'Description', placeholder: 'Describe the feature', multiline: true }] },
+  testimonials: { key: 'items', label: 'Testimonials', itemLabel: 'testimonial', inputs: [{ label: 'Quote', placeholder: 'Customer quote', multiline: true }, { label: 'Name', placeholder: 'Client name' }, { label: 'Role or company', placeholder: 'Role or company' }] },
+  statistics: { key: 'items', label: 'Statistics', itemLabel: 'statistic', inputs: [{ label: 'Value', placeholder: '99.9%' }, { label: 'Label', placeholder: 'Availability' }] },
+  pricing: { key: 'items', label: 'Plans', itemLabel: 'plan', inputs: [{ label: 'Name', placeholder: 'Essential' }, { label: 'Price', placeholder: 'Contact us' }, { label: 'Features', placeholder: 'One feature per line', multiline: true, lineSeparator: ';' }, { label: 'Button label', placeholder: 'Talk to us' }] },
+  faq: { key: 'items', label: 'Questions', itemLabel: 'question', inputs: [{ label: 'Question', placeholder: 'How do we begin?' }, { label: 'Answer', placeholder: 'Add the answer', multiline: true }] },
+  menu: { key: 'items', label: 'Menu links', itemLabel: 'link', inputs: [{ label: 'Label', placeholder: 'Partners' }, { label: 'Destination', placeholder: '/partners' }] },
+  breadcrumb: { key: 'items', label: 'Breadcrumbs', itemLabel: 'crumb', inputs: [{ label: 'Label', placeholder: 'Home' }, { label: 'Destination', placeholder: '/' }] },
   brand_hero: { key: 'capabilities', label: 'Capabilities', itemLabel: 'capability', inputs: [{ label: 'Label', placeholder: 'For example: Data protection' }] },
   home_intro: { key: 'items', label: 'Principles', itemLabel: 'principle', inputs: [{ label: 'Title', placeholder: 'For example: Specialized' }, { label: 'Description', placeholder: 'Describe this principle', multiline: true }] },
   principle_grid: { key: 'items', label: 'Principles', itemLabel: 'principle', inputs: [{ label: 'Title', placeholder: 'For example: Specialized' }, { label: 'Description', placeholder: 'Describe this principle', multiline: true }] },
@@ -261,12 +356,26 @@ function BuilderRepeaterEditor({
   );
 }
 
-const DESIGN_COLOR_FIELDS: Array<{ key: keyof Pick<DesignSystem, 'primary' | 'primaryDeep' | 'accent' | 'accentSoft' | 'surface' | 'surfaceMuted' | 'ink' | 'muted'>; label: string }> = [
-  { key: 'primary', label: 'Primary brand' }, { key: 'primaryDeep', label: 'Deep brand' },
+const DESIGN_COLOR_FIELDS: Array<{ key: keyof DesignSystem; label: string }> = [
+  { key: 'primary', label: 'Primary brand' }, { key: 'primaryDeep', label: 'Deep brand' }, { key: 'secondary', label: 'Secondary brand' },
   { key: 'accent', label: 'Accent' }, { key: 'accentSoft', label: 'Accent light' },
-  { key: 'surface', label: 'Main surface' }, { key: 'surfaceMuted', label: 'Soft surface' },
-  { key: 'ink', label: 'Heading and body ink' }, { key: 'muted', label: 'Supporting text' },
+  { key: 'background', label: 'Page background' }, { key: 'surface', label: 'Main surface' }, { key: 'surfaceMuted', label: 'Soft surface' }, { key: 'card', label: 'Card surface' },
+  { key: 'ink', label: 'Heading and body ink' }, { key: 'muted', label: 'Supporting text' }, { key: 'border', label: 'Borders' },
+  { key: 'link', label: 'Links' }, { key: 'button', label: 'Buttons' }, { key: 'buttonHover', label: 'Button hover' },
 ];
+
+const BRANDING_FIELDS = [
+  { key: 'logo', label: 'Default logo' }, { key: 'logoLight', label: 'Logo for dark backgrounds' },
+  { key: 'logoDark', label: 'Logo for light backgrounds' }, { key: 'logoMobile', label: 'Mobile logo' },
+  { key: 'favicon', label: 'Browser favicon' }, { key: 'appIcon', label: 'Application icon' },
+] as const;
+
+const BRANDING_LAYOUT_FIELDS = [
+  { key: 'logoWidth', label: 'Logo width (for example 52px)' },
+  { key: 'logoMobileWidth', label: 'Mobile logo width' },
+  { key: 'logoAlignment', label: 'Logo alignment: left, center, or right' },
+  { key: 'logoSpacing', label: 'Logo outer spacing' },
+] as const;
 
 function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
@@ -320,6 +429,7 @@ function headerLinks(value: unknown): HeaderLink[] {
       label: typeof item.label === 'string' ? item.label : '',
       href: typeof item.href === 'string' ? item.href : '#',
       enabled: item.enabled !== false,
+      parentId: typeof item.parentId === 'string' && item.parentId ? item.parentId : undefined,
     }));
 }
 
@@ -440,9 +550,13 @@ export function VisualEditor() {
   const [newPageTitle, setNewPageTitle] = useState('');
   const [newPageSlug, setNewPageSlug] = useState('');
   const [newPageBrief, setNewPageBrief] = useState('');
+  const [newPageTemplateId, setNewPageTemplateId] = useState('');
   const [copiedBuilderNode, setCopiedBuilderNode] = useState<BuilderNode | null>(null);
   const [pageCssOpen, setPageCssOpen] = useState(false);
   const [elementCssOpen, setElementCssOpen] = useState(false);
+  const [revisionsOpen, setRevisionsOpen] = useState(false);
+  const [revisions, setRevisions] = useState<CmsRevision[]>([]);
+  const [scheduleAt, setScheduleAt] = useState('');
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -493,6 +607,9 @@ export function VisualEditor() {
       document.slug !== 'home' &&
       document.slug !== 'partners',
   );
+  const builderTemplates = documents.filter((document) => document.type === 'builder_template' && document.status !== 'archived');
+  const blockTemplates = builderTemplates.filter((document) => document.data.kind === 'block');
+  const pageTemplates = builderTemplates.filter((document) => document.data.kind === 'page');
   const activeCustomPage = customPages.find(
     (document) => document.id === activeCustomPageId,
   );
@@ -518,6 +635,13 @@ export function VisualEditor() {
     },
     site: {
       logo: text(globalSettings?.data.logo, DEFAULT_HOME.site.logo),
+      logoLight: text(globalSettings?.data.logoLight, text(globalSettings?.data.logo, DEFAULT_HOME.site.logo)),
+      logoDark: text(globalSettings?.data.logoDark, text(globalSettings?.data.logo, DEFAULT_HOME.site.logo)),
+      logoMobile: text(globalSettings?.data.logoMobile, text(globalSettings?.data.logo, DEFAULT_HOME.site.logo)),
+      logoWidth: text(globalSettings?.data.logoWidth, DEFAULT_HOME.site.logoWidth),
+      logoMobileWidth: text(globalSettings?.data.logoMobileWidth, DEFAULT_HOME.site.logoMobileWidth),
+      logoAlignment: text(globalSettings?.data.logoAlignment, DEFAULT_HOME.site.logoAlignment),
+      logoSpacing: text(globalSettings?.data.logoSpacing, DEFAULT_HOME.site.logoSpacing),
       phone: text(globalSettings?.data.phone, DEFAULT_HOME.site.phone),
       phoneHref: text(globalSettings?.data.phoneHref, DEFAULT_HOME.site.phoneHref),
       address: text(globalSettings?.data.address, DEFAULT_HOME.site.address),
@@ -591,6 +715,10 @@ export function VisualEditor() {
     updateBuilder({ ...builderPage, customCss: value.slice(0, 80_000) });
   };
 
+  const updatePageSetting = <K extends keyof BuilderPage['settings']>(key: K, value: BuilderPage['settings'][K]) => {
+    updateBuilder({ ...builderPage, settings: { ...builderPage.settings, [key]: value } });
+  };
+
   const ensureBuilderDocument = async (): Promise<CmsDocument | null> => {
     if (builderDocument) return builderDocument;
     setStatus('saving');
@@ -642,8 +770,8 @@ export function VisualEditor() {
           type: 'builder_page',
           slug,
           title,
-          data: newPageBrief.trim() ? createPageFromBrief(newPageBrief) : emptyBuilderPage(),
-          note: newPageBrief.trim() ? 'Created from an editable page brief' : 'Created as a new visual-builder page',
+          data: newPageTemplateId ? normaliseBuilderPage(builderTemplates.find((template) => template.id === newPageTemplateId)?.data.page) : newPageBrief.trim() ? createPageFromBrief(newPageBrief) : emptyBuilderPage(),
+          note: newPageTemplateId ? 'Created from a saved CMS page template' : newPageBrief.trim() ? 'Created from an editable page brief' : 'Created as a new visual-builder page',
         }),
       });
       const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
@@ -657,12 +785,99 @@ export function VisualEditor() {
       setNewPageTitle('');
       setNewPageSlug('');
       setNewPageBrief('');
+      setNewPageTemplateId('');
       setStatus('saved');
-      setMessage(newPageBrief.trim() ? 'Editable page starter is ready. Refine the blocks, then publish it.' : 'New page draft is ready. Add blocks, then publish it.');
+      setMessage(newPageTemplateId || newPageBrief.trim() ? 'Editable page starter is ready. Refine the blocks, then publish it.' : 'New page draft is ready. Add blocks, then publish it.');
     } catch (error) {
       setStatus('error');
       setMessage(error instanceof Error ? error.message : 'The page draft could not be created.');
     }
+  };
+
+  const updateActivePage = (changes: Partial<Pick<CmsDocument, 'title' | 'slug'>>) => {
+    if (!activeCustomPage) return;
+    const next = documents.map((document) => document.id === activeCustomPage.id ? { ...document, ...changes } : document);
+    markChanged(next, [activeCustomPage.id]);
+  };
+
+  const duplicateActivePage = async () => {
+    if (!activeCustomPage) return;
+    setStatus('saving');
+    setMessage('Duplicating page…');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const title = `${activeCustomPage.title} copy`;
+      const slug = nextSlug(activeCustomPage.slug);
+      const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'builder_page', title, slug, data: normaliseBuilderPage(activeCustomPage.data), note: 'Duplicated page in visual editor' }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+      if (!response.ok || !result.document) throw new Error(result.error ?? 'The page could not be duplicated.');
+      setDocuments((current) => [...current, result.document!]);
+      setActiveCustomPageId(result.document.id);
+      setStatus('saved');
+      setMessage('Page duplicated as a draft');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The page could not be duplicated.');
+    }
+  };
+
+  const unpublishActivePage = async () => {
+    if (!activeCustomPage || activeCustomPage.status !== 'published') return;
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/documents/${activeCustomPage.id}/unpublish`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      setStatus('error');
+      setMessage('The page could not be unpublished.');
+      return;
+    }
+    setDocuments((current) => current.map((document) => document.id === activeCustomPage.id ? { ...document, status: 'draft', publishedData: null } : document));
+    setMessage('Page unpublished. Its draft remains in the CMS.');
+  };
+
+  const archiveActivePage = async () => {
+    if (!activeCustomPage || !window.confirm(`Archive “${activeCustomPage.title}”? Its saved revisions remain available in the CMS.`)) return;
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/documents/${activeCustomPage.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      setStatus('error');
+      setMessage('The page could not be archived.');
+      return;
+    }
+    setDocuments((current) => current.filter((document) => document.id !== activeCustomPage.id));
+    setActiveCustomPageId(null);
+    setPage('home');
+    setMessage('Page archived and removed from the live site');
+  };
+
+  const setActiveAsHomepage = async () => {
+    if (!activeCustomPage || !globalSettings) {
+      setStatus('error');
+      setMessage('Global settings must be available before setting the homepage.');
+      return;
+    }
+    if (activeCustomPage.status !== 'published') {
+      setStatus('error');
+      setMessage('Publish this page before setting it as the homepage.');
+      return;
+    }
+    setStatus('publishing');
+    setMessage('Setting homepage…');
+    const token = localStorage.getItem('cms_token');
+    const data = { ...globalSettings.data, homepageSlug: activeCustomPage.slug };
+    const update = await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ title: globalSettings.title, slug: globalSettings.slug, data, note: `Set ${activeCustomPage.slug} as homepage` }) });
+    const publish = update.ok ? await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}/publish`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }) : update;
+    if (!update.ok || !publish.ok) {
+      setStatus('error');
+      setMessage('The homepage setting could not be published.');
+      return;
+    }
+    setDocuments((current) => current.map((document) => document.id === globalSettings.id ? { ...document, data, publishedData: structuredClone(data), status: 'published' } : document));
+    setStatus('saved');
+    setMessage(`${activeCustomPage.title} is now the homepage`);
   };
 
   const addBuilderElement = async (type: BuilderNodeType) => {
@@ -670,7 +885,7 @@ export function VisualEditor() {
     if (!document) return;
     const currentPage = normaliseBuilderPage(document.data);
     const selectedNode = selectedBuilderNodeId ? findBuilderNode(currentPage, selectedBuilderNodeId) : undefined;
-    const canContain = Boolean(selectedNode && ['section', 'container', 'columns', 'column', 'card'].includes(selectedNode.type));
+    const canContain = Boolean(selectedNode && canContainBuilderChildren(selectedNode.type));
     const node = createBuilderNode(type);
     const nextPage = appendBuilderNode(currentPage, activeBuilderSlot, node, canContain ? selectedNode?.id : undefined);
     const nextDocuments = (document.id === builderDocument?.id ? documents : [...documents, document]).map((entry) =>
@@ -708,7 +923,7 @@ export function VisualEditor() {
 
   const pasteBuilderNode = () => {
     if (!copiedBuilderNode) return;
-    const parent = selectedBuilderNode && ['section', 'container', 'columns', 'column', 'card'].includes(selectedBuilderNode.type)
+    const parent = selectedBuilderNode && canContainBuilderChildren(selectedBuilderNode.type)
       ? selectedBuilderNode.id
       : undefined;
     const node = cloneBuilderNode(copiedBuilderNode);
@@ -717,9 +932,51 @@ export function VisualEditor() {
     setMessage('Copied block pasted into the draft');
   };
 
-  const moveBuilderBlock = (targetId: string) => {
+  const createBuilderTemplate = async (kind: 'block' | 'page') => {
+    if (kind === 'block' && !selectedBuilderNode) return;
+    const title = kind === 'block' ? `Reusable ${selectedBuilderNode!.type.replace('_', ' ')}` : `${activePageTitle} page template`;
+    setStatus('saving');
+    setMessage(`Saving ${kind} template…`);
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'builder_template', slug: nextSlug(title), title, data: kind === 'block' ? { kind, block: structuredClone(selectedBuilderNode) } : { kind, page: structuredClone(builderPage) }, note: `Saved ${kind} template in visual editor` }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+      if (!response.ok || !result.document) throw new Error(result.error ?? 'The template could not be saved.');
+      setDocuments((current) => [...current, result.document!]);
+      setStatus('saved');
+      setMessage(kind === 'block' ? 'Reusable block saved' : 'Page template saved');
+    } catch (error) {
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The template could not be saved.');
+    }
+  };
+
+  const insertBlockTemplate = (template: CmsDocument) => {
+    const pageFixture = emptyBuilderPage();
+    pageFixture.slots.afterContent = [template.data.block as BuilderNode];
+    const source = normaliseBuilderPage(pageFixture).slots.afterContent[0];
+    if (!source) {
+      setStatus('error');
+      setMessage('This reusable block is no longer valid.');
+      return;
+    }
+    const parent = selectedBuilderNode && canContainBuilderChildren(selectedBuilderNode.type) ? selectedBuilderNode.id : undefined;
+    const node = cloneBuilderNode(source);
+    updateBuilder(appendBuilderNode(builderPage, activeBuilderSlot, node, parent));
+    setSelectedBuilderNodeId(node.id);
+    setMessage('Reusable block inserted into the draft');
+  };
+
+  const moveBuilderBlock = (targetId: string, requestedMode: 'before' | 'inside' = 'before') => {
     if (!draggedBuilderNodeId) return;
-    updateBuilder(moveBuilderNode(builderPage, draggedBuilderNodeId, targetId));
+    const source = findBuilderNode(builderPage, draggedBuilderNodeId);
+    const target = findBuilderNode(builderPage, targetId);
+    const mode = requestedMode === 'inside' && source && target && source.type !== target.type ? 'inside' : 'before';
+    updateBuilder(moveBuilderNode(builderPage, draggedBuilderNodeId, targetId, mode));
     setDraggedBuilderNodeId(null);
     setMessage('Custom block order updated');
   };
@@ -891,6 +1148,86 @@ export function VisualEditor() {
           : 'The page could not be published.',
       );
     }
+  };
+
+  const scheduleActivePage = async () => {
+    if (!builderDocument || !scheduleAt) {
+      setStatus('error');
+      setMessage('Choose a future date and time first.');
+      return;
+    }
+    const saved = await saveDrafts();
+    if (!saved) return;
+    const publishAt = new Date(scheduleAt);
+    if (Number.isNaN(publishAt.getTime())) {
+      setStatus('error');
+      setMessage('Choose a valid publication date and time.');
+      return;
+    }
+    setStatus('publishing');
+    setMessage('Scheduling publication…');
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ publishAt: publishAt.toISOString() }),
+    });
+    const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+    if (!response.ok || !result.document) {
+      setStatus('error');
+      setMessage(result.error ?? 'The page could not be scheduled.');
+      return;
+    }
+    setDocuments((current) => current.map((document) => document.id === result.document!.id ? result.document! : document));
+    setStatus('saved');
+    setMessage(`Publication scheduled for ${publishAt.toLocaleString()}`);
+  };
+
+  const cancelScheduledPage = async () => {
+    if (!builderDocument?.scheduledAt) return;
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ publishAt: null }),
+    });
+    const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+    if (!response.ok || !result.document) {
+      setStatus('error');
+      setMessage(result.error ?? 'The schedule could not be cancelled.');
+      return;
+    }
+    setDocuments((current) => current.map((document) => document.id === result.document!.id ? result.document! : document));
+    setMessage('Scheduled publication cancelled');
+  };
+
+  const showRevisions = async () => {
+    if (!builderDocument) return;
+    setRevisionsOpen(true);
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/revisions`, { headers: { authorization: `Bearer ${token}` } });
+    const result = (await response.json().catch(() => ({}))) as { revisions?: CmsRevision[]; error?: string };
+    if (!response.ok) {
+      setStatus('error');
+      setMessage(result.error ?? 'Revision history could not be loaded.');
+      return;
+    }
+    setRevisions(result.revisions ?? []);
+  };
+
+  const restorePageRevision = async (revisionNumber: number) => {
+    if (!builderDocument || !window.confirm(`Restore revision ${revisionNumber} as the current draft?`)) return;
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/restore/${revisionNumber}`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      setStatus('error');
+      setMessage('The revision could not be restored.');
+      return;
+    }
+    await load();
+    setRevisionsOpen(false);
+    setSelectedBuilderNodeId(null);
+    setMessage(`Revision ${revisionNumber} restored as a draft`);
   };
 
   const undo = () => {
@@ -1114,6 +1451,9 @@ export function VisualEditor() {
               !(
                 selectedDocument.type === 'navigation' &&
                 ['ctaLabel', 'ctaHref'].includes(key)
+              ) && !(
+                selectedDocument.type === 'site_settings' &&
+                BRANDING_FIELDS.some((field) => field.key === key)
               ),
           )
           .map(([key, value]) => ({ key, value: value as string | boolean })),
@@ -1238,6 +1578,7 @@ export function VisualEditor() {
           <button className={`admin-btn admin-btn-secondary ${elementCssOpen ? 'active' : ''}`} type="button" disabled={!builderDocument} onClick={() => setElementCssOpen(!elementCssOpen)} aria-pressed={elementCssOpen}>
             <MousePointer2 size={16} /> Element CSS
           </button>
+          <button className={`admin-btn admin-btn-ghost ${revisionsOpen ? 'active' : ''}`} type="button" disabled={!builderDocument} onClick={() => revisionsOpen ? setRevisionsOpen(false) : void showRevisions()}><HistoryIcon size={16} /> Revisions</button>
           <button
             className="admin-btn admin-btn-secondary"
             type="button"
@@ -1293,6 +1634,8 @@ export function VisualEditor() {
         </section>
       )}
 
+      {revisionsOpen && builderDocument && <section className="visual-revisions" aria-label="Page revision history"><div><strong>Revision history</strong><span>Restore any saved version as a new draft.</span></div>{revisions.length ? <ol>{revisions.map((revision) => <li key={revision.id}><div><strong>Revision {revision.revisionNumber}</strong><span>{revision.note || 'Saved draft'} · {new Date(revision.createdAt).toLocaleString()}</span></div><button type="button" onClick={() => void restorePageRevision(revision.revisionNumber)}>Restore</button></li>)}</ol> : <p>No saved revisions yet.</p>}</section>}
+
       {addingPage && (
         <section className="visual-new-page-form" aria-label="Create a new page">
           <div>
@@ -1328,8 +1671,9 @@ export function VisualEditor() {
             />
             <small>Creates a design-matched, fully editable starter using the CMS block library.</small>
           </label>
+          {pageTemplates.length > 0 && <label>Start from a saved template<select value={newPageTemplateId} onChange={(event) => setNewPageTemplateId(event.target.value)}><option value="">No template</option>{pageTemplates.map((template) => <option key={template.id} value={template.id}>{template.title}</option>)}</select><small>A saved template replaces the optional page brief.</small></label>}
           <button className="admin-btn admin-btn-primary" type="button" onClick={() => void createPage()}>
-            {newPageBrief.trim() ? 'Create editable starter' : 'Create blank draft'}
+            {newPageTemplateId || newPageBrief.trim() ? 'Create editable starter' : 'Create blank draft'}
           </button>
           <button className="admin-btn admin-btn-ghost" type="button" onClick={() => setAddingPage(false)}>
             Cancel
@@ -1429,16 +1773,40 @@ export function VisualEditor() {
           </div>}
           {activeCustomPage && (
             <div className="visual-custom-page-info">
-              <span>NEW PAGE</span>
-              <strong>{activeCustomPage.title}</strong>
+              <span>PAGE SETTINGS</span>
+              <label className="visual-field"><span>Page title</span><input value={activeCustomPage.title} onChange={(event) => updateActivePage({ title: event.target.value })} /></label>
+              <label className="visual-field"><span>URL name</span><input value={activeCustomPage.slug} onChange={(event) => updateActivePage({ slug: slugFromTitle(event.target.value) })} /></label>
+              <small>{activeCustomPage.status === 'published' ? 'Published' : 'Draft only'}</small>
               <a href={customPageHref(activeCustomPage.slug)} target="_blank" rel="noreferrer">
                 Open published URL
               </a>
+              <div className="visual-page-actions">
+                <button type="button" onClick={() => void duplicateActivePage()}><Copy size={13} /> Duplicate</button>
+                <button type="button" onClick={() => void createBuilderTemplate('page')}>Save template</button>
+                <button type="button" onClick={() => void setActiveAsHomepage()}>Set homepage</button>
+                {activeCustomPage.status === 'published' && <button type="button" onClick={() => void unpublishActivePage()}>Unpublish</button>}
+                <button type="button" className="danger" onClick={() => void archiveActivePage()}><Archive size={13} /> Archive</button>
+              </div>
             </div>
           )}
           <div className="visual-builder-library">
             <span>STRUCTURED BUILDER</span>
             <p>Reusable INFOStorage design blocks. Every block stays structured, responsive, and editable.</p>
+            {builderDocument && <details className="visual-page-seo"><summary>Page SEO and shell</summary><div>
+              <label className="visual-field"><span>Search title</span><input value={builderPage.settings.seoTitle} maxLength={160} placeholder={activePageTitle} onChange={(event) => updatePageSetting('seoTitle', event.target.value)} /></label>
+              <label className="visual-field"><span>Search description</span><textarea value={builderPage.settings.seoDescription} maxLength={320} onChange={(event) => updatePageSetting('seoDescription', event.target.value)} /></label>
+              <label className="visual-field"><span>Social image</span><input value={builderPage.settings.socialImage} placeholder="Image URL" onChange={(event) => updatePageSetting('socialImage', event.target.value)} />{media.some((asset) => asset.mimeType.startsWith('image/')) && <select value="" onChange={(event) => event.target.value && updatePageSetting('socialImage', event.target.value)}><option value="">Choose from media…</option>{media.filter((asset) => asset.mimeType.startsWith('image/')).map((asset) => <option key={asset.id} value={asset.url}>{asset.filename}</option>)}</select>}</label>
+              <label className="visual-check-field"><input type="checkbox" checked={builderPage.settings.hideDefaultHeader} onChange={(event) => updatePageSetting('hideDefaultHeader', event.target.checked)} /><span>Hide automatic header</span></label>
+              <label className="visual-check-field"><input type="checkbox" checked={builderPage.settings.hideDefaultFooter} onChange={(event) => updatePageSetting('hideDefaultFooter', event.target.checked)} /><span>Hide automatic footer</span></label>
+            </div></details>}
+            {builderDocument && <details className="visual-page-seo"><summary>Schedule publication</summary><div>
+              {builderDocument.scheduledAt && <small>Scheduled for {new Date(builderDocument.scheduledAt).toLocaleString()}</small>}
+              <label className="visual-field"><span>Date and time</span><input type="datetime-local" value={scheduleAt} onChange={(event) => setScheduleAt(event.target.value)} /></label>
+              <div className="visual-page-actions">
+                <button type="button" disabled={!scheduleAt} onClick={() => void scheduleActivePage()}>Schedule</button>
+                {builderDocument.scheduledAt && <button type="button" onClick={() => void cancelScheduledPage()}>Cancel schedule</button>}
+              </div>
+            </div></details>}
             <label className="visual-field">
               <span>Insert location</span>
               <select value={activeBuilderSlot} onChange={(event) => setActiveBuilderSlot(event.target.value as typeof activeBuilderSlot)}>
@@ -1455,29 +1823,21 @@ export function VisualEditor() {
               ) : <small className="visual-builder-empty">Drop or add a block here.</small>}
             </div>
             <div className="visual-builder-elements">
-              {[
-                { type: 'section', label: 'Section', Icon: Box },
-                { type: 'container', label: 'Container', Icon: Box },
-                { type: 'heading', label: 'Heading', Icon: Heading },
-                { type: 'text', label: 'Text', Icon: Text },
-                { type: 'image', label: 'Image', Icon: ImageIcon },
-                { type: 'button', label: 'Button', Icon: MousePointer2 },
-                { type: 'columns', label: 'Columns', Icon: Columns3 },
-                { type: 'card', label: 'Card', Icon: Box },
-                { type: 'divider', label: 'Divider', Icon: Minus },
-                { type: 'spacer', label: 'Spacer', Icon: Plus },
-                ...DESIGN_BLOCKS,
-              ].map(({ type, label, Icon }) => (
-                <button
-                  key={type}
-                  type="button"
-                  draggable
-                  onClick={() => void addBuilderElement(type as BuilderNodeType)}
-                  onDragStart={(event) => { event.dataTransfer.setData('application/x-infostorage-builder-new', type); event.dataTransfer.effectAllowed = 'copy'; }}
-                >
-                  <Icon size={14} /> {label}
-                </button>
-              ))}
+              {BUILDER_LIBRARY_GROUPS.map((group) => <details key={group.label} open={group.label === 'Layout' || group.label === 'Content'}><summary>{group.label}</summary><div>{group.items.map(({ type, label, Icon }) => (
+                  <button
+                    key={type}
+                    type="button"
+                    draggable
+                    onClick={() => void addBuilderElement(type)}
+                    onDragStart={(event) => { event.dataTransfer.setData('application/x-infostorage-builder-new', type); event.dataTransfer.effectAllowed = 'copy'; }}
+                  >
+                    <Icon size={14} /> {label}
+                  </button>
+                ))}</div></details>)}
+            </div>
+            <div className="visual-template-library">
+              <div><strong>Saved templates</strong><button type="button" disabled={!builderDocument} onClick={() => void createBuilderTemplate('page')}>Save page</button></div>
+              {blockTemplates.length ? blockTemplates.map((template) => <button type="button" key={template.id} onClick={() => insertBlockTemplate(template)}><Plus size={13} /> {template.title}</button>) : <small>Save any selected block to reuse it on another page.</small>}
             </div>
           </div>
         </aside>
@@ -1515,7 +1875,8 @@ export function VisualEditor() {
                 style={designVariables(designSystemFromDoc(globalSettings?.data.design))}
                 previewCss editable selectedNodeId={selectedBuilderNodeId}
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
-                onDropNode={moveBuilderBlock} onDragStartNode={setDraggedBuilderNodeId} />
+                onDropNode={moveBuilderBlock} onDragStartNode={setDraggedBuilderNodeId}
+                onUpdateNodeProp={(nodeId, key, value) => changeBuilderNode(nodeId, (node) => ({ ...node, props: { ...node.props, [key]: value } }))} />
             ) : (
               <CmsSitePage
                 kind={page}
@@ -1528,6 +1889,7 @@ export function VisualEditor() {
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
                 onDropNode={moveBuilderBlock}
                 onDragStartNode={setDraggedBuilderNodeId}
+                onUpdateNodeProp={(nodeId, key, value) => changeBuilderNode(nodeId, (node) => ({ ...node, props: { ...node.props, [key]: value } }))}
               />
             )}
             {isCustomPage && !BUILDER_SLOTS.some((slot) => builderPage.slots[slot.id].length) && (
@@ -1550,7 +1912,7 @@ export function VisualEditor() {
                 <strong>{selectedBuilderNode.type}</strong>
                 <small>Edit content and layout here, or use Element CSS to style any part of this block.</small>
               </div>
-              {['section', 'container', 'column', 'card'].includes(selectedBuilderNode.type) && (
+              {['section', 'container', 'row', 'column', 'grid', 'card'].includes(selectedBuilderNode.type) && (
                 <label className="visual-field">
                   <span>Editor label</span>
                   <input value={String(selectedBuilderNode.props.label ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, label: event.target.value } }))} />
@@ -1559,17 +1921,23 @@ export function VisualEditor() {
               {DESIGN_BLOCK_FIELDS[selectedBuilderNode.type]?.filter((field) => field.key !== DESIGN_BLOCK_REPEATERS[selectedBuilderNode.type]?.key).map((field) => (
                 <label key={field.key} className="visual-field">
                   <span>{field.label}</span>
-                  {field.multiline ? (
+                  {field.kind === 'boolean' ? (
+                    <input type="checkbox" checked={Boolean(selectedBuilderNode.props[field.key])} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.checked } }))} />
+                  ) : field.kind === 'select' ? (
+                    <select value={String(selectedBuilderNode.props[field.key] ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.value } }))}>{field.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+                  ) : field.multiline ? (
                     <textarea
                       value={String(selectedBuilderNode.props[field.key] ?? '')}
                       onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.value } }))}
                     />
                   ) : (
                     <input
+                      type={field.kind === 'number' ? 'number' : 'text'}
                       value={String(selectedBuilderNode.props[field.key] ?? '')}
-                      onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.value } }))}
+                      onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: field.kind === 'number' ? Number(event.target.value) : event.target.value } }))}
                     />
                   )}
+                  {field.kind === 'media' && media.some((asset) => asset.mimeType.startsWith('image/')) && <select value="" onChange={(event) => { if (event.target.value) changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, [field.key]: event.target.value } })); }}><option value="">Choose from media…</option>{media.filter((asset) => asset.mimeType.startsWith('image/')).map((asset) => <option key={asset.id} value={asset.url}>{asset.filename}</option>)}</select>}
                 </label>
               ))}
               {selectedBuilderRepeater && (
@@ -1606,6 +1974,14 @@ export function VisualEditor() {
                     <span>Alt text</span>
                     <input value={String(selectedBuilderNode.props.alt ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, alt: event.target.value } }))} />
                   </label>
+                  <label className="visual-field">
+                    <span>Image title</span>
+                    <input value={String(selectedBuilderNode.props.title ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, title: event.target.value } }))} />
+                  </label>
+                  <label className="visual-field">
+                    <span>Caption</span>
+                    <textarea value={String(selectedBuilderNode.props.caption ?? '')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, caption: event.target.value } }))} />
+                  </label>
                   {media.length > 0 && (
                     <label className="visual-field">
                       <span>Media library</span>
@@ -1624,8 +2000,8 @@ export function VisualEditor() {
                   <label className="visual-field"><span>Button treatment</span><select value={String(selectedBuilderNode.props.variant ?? 'primary')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, variant: event.target.value } }))}><option value="primary">Primary</option><option value="secondary">Secondary</option></select></label>
                 </>
               )}
-              {selectedBuilderNode.type === 'columns' && (
-                <label className="visual-field"><span>Desktop columns</span><select value={String(selectedBuilderNode.props.columns ?? 2)} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, columns: Number(event.target.value) } }))}><option value="1">One column</option><option value="2">Two columns</option><option value="3">Three columns</option></select></label>
+              {(selectedBuilderNode.type === 'columns' || selectedBuilderNode.type === 'grid') && (
+                <label className="visual-field"><span>Desktop columns</span><select value={String(selectedBuilderNode.props.columns ?? 2)} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, columns: Number(event.target.value) } }))}><option value="1">One column</option><option value="2">Two columns</option><option value="3">Three columns</option><option value="4">Four columns</option><option value="5">Five columns</option><option value="6">Six columns</option></select></label>
               )}
               {selectedBuilderNode.type === 'spacer' && (
                 <label className="visual-field"><span>Spacer size</span><select value={String(selectedBuilderNode.props.size ?? 'regular')} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, props: { ...node.props, size: event.target.value } }))}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
@@ -1649,11 +2025,18 @@ export function VisualEditor() {
                 <label className="visual-field"><span>Mobile spacing</span><select value={selectedBuilderNode.responsive.mobilePadding} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, mobilePadding: event.target.value as BuilderNode['responsive']['mobilePadding'] } }))}><option value="inherit">Use tablet</option><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
                 {selectedBuilderNode.type === 'columns' && <><label className="visual-field"><span>Tablet columns</span><select value={selectedBuilderNode.responsive.tabletColumns} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, tabletColumns: event.target.value === 'inherit' ? 'inherit' : Number(event.target.value) as 1 | 2 | 3 | 4 } }))}><option value="inherit">Use desktop</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option><option value="4">Four</option></select></label><label className="visual-field"><span>Mobile columns</span><select value={selectedBuilderNode.responsive.mobileColumns} onChange={(event) => changeBuilderNode(selectedBuilderNode.id, (node) => ({ ...node, responsive: { ...node.responsive, mobileColumns: event.target.value === 'inherit' ? 'inherit' : Number(event.target.value) as 1 | 2 | 3 | 4 } }))}><option value="inherit">Use tablet</option><option value="1">One</option><option value="2">Two</option><option value="3">Three</option><option value="4">Four</option></select></label></>}
               </section>
+              <BuilderStyleControls
+                node={selectedBuilderNode}
+                device={device}
+                media={media}
+                onChange={(nextNode) => changeBuilderNode(selectedBuilderNode.id, () => nextNode)}
+              />
               <section className="visual-section-actions">
                 <h3>Block actions</h3>
                 <button type="button" onClick={duplicateSelectedBuilderNode}><Copy size={15} /> Duplicate</button>
                 <button type="button" onClick={copySelectedBuilderNode}><Copy size={15} /> Copy</button>
                 <button type="button" disabled={!copiedBuilderNode} onClick={pasteBuilderNode}><Plus size={15} /> Paste here</button>
+                <button type="button" onClick={() => void createBuilderTemplate('block')}><Plus size={15} /> Save as reusable block</button>
                 <button type="button" className="danger" onClick={removeSelectedBuilderNode}><Archive size={15} /> Remove</button>
               </section>
             </div>
@@ -1739,6 +2122,10 @@ export function VisualEditor() {
                           )
                         }
                       />
+                      <select aria-label={`Parent menu for ${item.label || `link ${index + 1}`}`} value={item.parentId ?? ''} onChange={(event) => updateHeaderLinks(selectedDocument.id, selectedHeaderLinks.map((link, linkIndex) => linkIndex === index ? { ...link, parentId: event.target.value || undefined } : link))}>
+                        <option value="">Top-level link</option>
+                        {selectedHeaderLinks.filter((candidate) => candidate.id !== item.id && !candidate.parentId).map((candidate) => <option key={candidate.id} value={candidate.id}>Under {candidate.label || 'unnamed link'}</option>)}
+                      </select>
                       <label>
                         <input
                           type="checkbox"
@@ -1756,6 +2143,8 @@ export function VisualEditor() {
                         />
                         Show
                       </label>
+                      <button type="button" aria-label={`Move ${item.label || 'link'} up`} disabled={index === 0} onClick={() => { const next = [...selectedHeaderLinks]; const [moved] = next.splice(index, 1); next.splice(index - 1, 0, moved); updateHeaderLinks(selectedDocument.id, next); }}><ArrowUp size={14} /></button>
+                      <button type="button" aria-label={`Move ${item.label || 'link'} down`} disabled={index === selectedHeaderLinks.length - 1} onClick={() => { const next = [...selectedHeaderLinks]; const [moved] = next.splice(index, 1); next.splice(index + 1, 0, moved); updateHeaderLinks(selectedDocument.id, next); }}><ArrowDown size={14} /></button>
                       <button
                         type="button"
                         className="danger"
@@ -1796,6 +2185,11 @@ export function VisualEditor() {
                   <p>
                     These shared tokens drive the public website and every reusable CMS design block.
                   </p>
+                  <div className="visual-theme-groups">
+                    <h4>Brand assets</h4>
+                    {BRANDING_FIELDS.map((field) => <label className="visual-field" key={field.key}><span>{field.label}</span><input value={text(selectedDocument.data[field.key])} placeholder="Choose or paste an image URL" onChange={(event) => updateField({ documentId: selectedDocument.id, key: field.key }, event.target.value)} />{media.some((asset) => asset.mimeType.startsWith('image/')) && <select value="" onChange={(event) => { if (event.target.value) updateField({ documentId: selectedDocument.id, key: field.key }, event.target.value); }}><option value="">Choose from media…</option>{media.filter((asset) => asset.mimeType.startsWith('image/')).map((asset) => <option key={asset.id} value={asset.url}>{asset.filename}</option>)}</select>}</label>)}
+                    {BRANDING_LAYOUT_FIELDS.map((field) => <label className="visual-field" key={field.key}><span>{field.label}</span><input value={text(selectedDocument.data[field.key])} onChange={(event) => updateField({ documentId: selectedDocument.id, key: field.key }, event.target.value)} /></label>)}
+                  </div>
                   <div className="visual-design-tokens">
                     {DESIGN_COLOR_FIELDS.map((field) => (
                       <label key={field.key} className="visual-field">
@@ -1820,6 +2214,23 @@ export function VisualEditor() {
                       <option value="standard">Standard</option><option value="wide">Wide</option>
                     </select>
                   </label>
+                  <div className="visual-theme-groups">
+                    <h4>Typography</h4>
+                    <label className="visual-field"><span>Heading font</span><select value={selectedDesign.headingFont} onChange={(event) => updateDesignField(selectedDocument.id, 'headingFont', event.target.value)}><option value="geist">INFOStorage sans</option><option value="system">System sans</option><option value="serif">Serif</option><option value="mono">Monospace</option></select></label>
+                    <label className="visual-field"><span>Body font</span><select value={selectedDesign.bodyFont} onChange={(event) => updateDesignField(selectedDocument.id, 'bodyFont', event.target.value)}><option value="geist">INFOStorage sans</option><option value="system">System sans</option><option value="serif">Serif</option><option value="mono">Monospace</option></select></label>
+                    <label className="visual-field"><span>Base text size</span><select value={selectedDesign.baseFontSize} onChange={(event) => updateDesignField(selectedDocument.id, 'baseFontSize', event.target.value)}><option value="compact">Compact</option><option value="regular">Regular</option><option value="large">Large</option></select></label>
+                    <label className="visual-field"><span>Heading weight</span><select value={selectedDesign.headingWeight} onChange={(event) => updateDesignField(selectedDocument.id, 'headingWeight', event.target.value)}><option value="regular">Regular</option><option value="medium">Medium</option><option value="bold">Bold</option></select></label>
+                    <label className="visual-field"><span>Body weight</span><select value={selectedDesign.bodyWeight} onChange={(event) => updateDesignField(selectedDocument.id, 'bodyWeight', event.target.value)}><option value="regular">Regular</option><option value="medium">Medium</option></select></label>
+                    <label className="visual-field"><span>Line spacing</span><select value={selectedDesign.lineHeight} onChange={(event) => updateDesignField(selectedDocument.id, 'lineHeight', event.target.value)}><option value="tight">Tight</option><option value="regular">Regular</option><option value="relaxed">Relaxed</option></select></label>
+                    <label className="visual-field"><span>Letter spacing</span><select value={selectedDesign.letterSpacing} onChange={(event) => updateDesignField(selectedDocument.id, 'letterSpacing', event.target.value)}><option value="tight">Tight</option><option value="regular">Regular</option><option value="wide">Wide</option></select></label>
+                    <h4>Components and spacing</h4>
+                    <label className="visual-field"><span>Button corners</span><select value={selectedDesign.buttonRadius} onChange={(event) => updateDesignField(selectedDocument.id, 'buttonRadius', event.target.value)}><option value="square">Square</option><option value="regular">Regular</option><option value="pill">Pill</option></select></label>
+                    <label className="visual-field"><span>Card corners</span><select value={selectedDesign.cardRadius} onChange={(event) => updateDesignField(selectedDocument.id, 'cardRadius', event.target.value)}><option value="compact">Compact</option><option value="regular">Regular</option><option value="generous">Generous</option></select></label>
+                    <label className="visual-field"><span>Global shadow</span><select value={selectedDesign.shadow} onChange={(event) => updateDesignField(selectedDocument.id, 'shadow', event.target.value)}><option value="none">None</option><option value="soft">Soft</option><option value="strong">Strong</option></select></label>
+                    <label className="visual-field"><span>Page spacing</span><select value={selectedDesign.pageSpacing} onChange={(event) => updateDesignField(selectedDocument.id, 'pageSpacing', event.target.value)}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                    <label className="visual-field"><span>Section spacing</span><select value={selectedDesign.sectionSpacing} onChange={(event) => updateDesignField(selectedDocument.id, 'sectionSpacing', event.target.value)}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                    <label className="visual-field"><span>Grid gap</span><select value={selectedDesign.gridGap} onChange={(event) => updateDesignField(selectedDocument.id, 'gridGap', event.target.value)}><option value="compact">Compact</option><option value="regular">Regular</option><option value="spacious">Spacious</option></select></label>
+                  </div>
                 </section>
               )}
               {selectedFields.map((field) => (

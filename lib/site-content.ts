@@ -18,6 +18,7 @@ export interface NavItem {
   label: string;
   href: string;
   enabled: boolean;
+  parentId?: string;
 }
 
 export interface SolutionContent {
@@ -42,27 +43,67 @@ export interface ClientContent {
 export interface DesignSystem {
   primary: string;
   primaryDeep: string;
+  secondary: string;
   accent: string;
   accentSoft: string;
+  background: string;
   surface: string;
   surfaceMuted: string;
+  card: string;
   ink: string;
   muted: string;
+  border: string;
+  link: string;
+  button: string;
+  buttonHover: string;
+  headingFont: 'geist' | 'system' | 'serif' | 'mono';
+  bodyFont: 'geist' | 'system' | 'serif' | 'mono';
+  baseFontSize: 'compact' | 'regular' | 'large';
+  headingWeight: 'regular' | 'medium' | 'bold';
+  bodyWeight: 'regular' | 'medium';
+  lineHeight: 'tight' | 'regular' | 'relaxed';
+  letterSpacing: 'tight' | 'regular' | 'wide';
   radius: 'compact' | 'regular' | 'generous';
+  buttonRadius: 'square' | 'regular' | 'pill';
+  cardRadius: 'compact' | 'regular' | 'generous';
+  shadow: 'none' | 'soft' | 'strong';
   container: 'standard' | 'wide';
+  pageSpacing: 'compact' | 'regular' | 'spacious';
+  sectionSpacing: 'compact' | 'regular' | 'spacious';
+  gridGap: 'compact' | 'regular' | 'spacious';
 }
 
 export const DEFAULT_DESIGN_SYSTEM: DesignSystem = {
   primary: '#62002f',
   primaryDeep: '#280817',
+  secondary: '#510028',
   accent: '#820040',
   accentSoft: '#ffd4e4',
+  background: '#fff8fb',
   surface: '#fff8fb',
   surfaceMuted: '#f1e4ea',
+  card: '#fff8fb',
   ink: '#2a0d1c',
   muted: '#735568',
+  border: '#d9a7bc',
+  link: '#820040',
+  button: '#820040',
+  buttonHover: '#62002f',
+  headingFont: 'geist',
+  bodyFont: 'geist',
+  baseFontSize: 'regular',
+  headingWeight: 'medium',
+  bodyWeight: 'regular',
+  lineHeight: 'regular',
+  letterSpacing: 'regular',
   radius: 'regular',
+  buttonRadius: 'regular',
+  cardRadius: 'regular',
+  shadow: 'soft',
   container: 'standard',
+  pageSpacing: 'regular',
+  sectionSpacing: 'regular',
+  gridGap: 'regular',
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -80,14 +121,34 @@ export function designSystemFromDoc(value: unknown): DesignSystem {
   return {
     primary: color(value.primary, DEFAULT_DESIGN_SYSTEM.primary),
     primaryDeep: color(value.primaryDeep, DEFAULT_DESIGN_SYSTEM.primaryDeep),
+    secondary: color(value.secondary, DEFAULT_DESIGN_SYSTEM.secondary),
     accent: color(value.accent, DEFAULT_DESIGN_SYSTEM.accent),
     accentSoft: color(value.accentSoft, DEFAULT_DESIGN_SYSTEM.accentSoft),
+    background: color(value.background, DEFAULT_DESIGN_SYSTEM.background),
     surface: color(value.surface, DEFAULT_DESIGN_SYSTEM.surface),
     surfaceMuted: color(value.surfaceMuted, DEFAULT_DESIGN_SYSTEM.surfaceMuted),
+    card: color(value.card, DEFAULT_DESIGN_SYSTEM.card),
     ink: color(value.ink, DEFAULT_DESIGN_SYSTEM.ink),
     muted: color(value.muted, DEFAULT_DESIGN_SYSTEM.muted),
+    border: color(value.border, DEFAULT_DESIGN_SYSTEM.border),
+    link: color(value.link, DEFAULT_DESIGN_SYSTEM.link),
+    button: color(value.button, DEFAULT_DESIGN_SYSTEM.button),
+    buttonHover: color(value.buttonHover, DEFAULT_DESIGN_SYSTEM.buttonHover),
+    headingFont: value.headingFont === 'system' || value.headingFont === 'serif' || value.headingFont === 'mono' ? value.headingFont : 'geist',
+    bodyFont: value.bodyFont === 'system' || value.bodyFont === 'serif' || value.bodyFont === 'mono' ? value.bodyFont : 'geist',
+    baseFontSize: value.baseFontSize === 'compact' || value.baseFontSize === 'large' ? value.baseFontSize : 'regular',
+    headingWeight: value.headingWeight === 'regular' || value.headingWeight === 'bold' ? value.headingWeight : 'medium',
+    bodyWeight: value.bodyWeight === 'medium' ? value.bodyWeight : 'regular',
+    lineHeight: value.lineHeight === 'tight' || value.lineHeight === 'relaxed' ? value.lineHeight : 'regular',
+    letterSpacing: value.letterSpacing === 'tight' || value.letterSpacing === 'wide' ? value.letterSpacing : 'regular',
     radius: value.radius === 'compact' || value.radius === 'generous' ? value.radius : 'regular',
+    buttonRadius: value.buttonRadius === 'square' || value.buttonRadius === 'pill' ? value.buttonRadius : 'regular',
+    cardRadius: value.cardRadius === 'compact' || value.cardRadius === 'generous' ? value.cardRadius : 'regular',
+    shadow: value.shadow === 'none' || value.shadow === 'strong' ? value.shadow : 'soft',
     container: value.container === 'wide' ? 'wide' : 'standard',
+    pageSpacing: value.pageSpacing === 'compact' || value.pageSpacing === 'spacious' ? value.pageSpacing : 'regular',
+    sectionSpacing: value.sectionSpacing === 'compact' || value.sectionSpacing === 'spacious' ? value.sectionSpacing : 'regular',
+    gridGap: value.gridGap === 'compact' || value.gridGap === 'spacious' ? value.gridGap : 'regular',
   };
 }
 
@@ -95,17 +156,36 @@ export function designVariables(design: DesignSystem): Record<string, string> {
   return {
     '--background': design.surface,
     '--foreground': design.ink,
+    '--cms-secondary': design.secondary,
     '--navy': design.primary,
     '--navy-deep': design.primaryDeep,
     '--ink': design.ink,
     '--cream': design.surface,
+    '--cms-background': design.background,
+    '--cms-card': design.card,
     '--sand': design.surfaceMuted,
     '--muted': design.muted,
     '--copper': design.accent,
     '--electric': design.accentSoft,
-    '--line': `color-mix(in srgb, ${design.accent} 17%, transparent)`,
+    '--line': design.border,
+    '--cms-link': design.link,
+    '--cms-button': design.button,
+    '--cms-button-hover': design.buttonHover,
+    '--cms-heading-font': design.headingFont === 'serif' ? 'Georgia, serif' : design.headingFont === 'mono' ? 'var(--font-geist-mono), monospace' : design.headingFont === 'system' ? 'Arial, sans-serif' : 'var(--font-geist-sans), Arial, sans-serif',
+    '--cms-body-font': design.bodyFont === 'serif' ? 'Georgia, serif' : design.bodyFont === 'mono' ? 'var(--font-geist-mono), monospace' : design.bodyFont === 'system' ? 'Arial, sans-serif' : 'var(--font-geist-sans), Arial, sans-serif',
+    '--cms-base-font-size': design.baseFontSize === 'compact' ? '15px' : design.baseFontSize === 'large' ? '18px' : '16px',
+    '--cms-heading-weight': design.headingWeight === 'regular' ? '450' : design.headingWeight === 'bold' ? '750' : '580',
+    '--cms-body-weight': design.bodyWeight === 'medium' ? '520' : '400',
+    '--cms-line-height': design.lineHeight === 'tight' ? '1.4' : design.lineHeight === 'relaxed' ? '1.8' : '1.6',
+    '--cms-letter-spacing': design.letterSpacing === 'tight' ? '-0.02em' : design.letterSpacing === 'wide' ? '0.04em' : '0',
     '--cms-radius': design.radius === 'compact' ? '0.45rem' : design.radius === 'generous' ? '1.5rem' : '0.9rem',
+    '--cms-button-radius': design.buttonRadius === 'square' ? '0' : design.buttonRadius === 'pill' ? '999px' : '0.45rem',
+    '--cms-card-radius': design.cardRadius === 'compact' ? '0.45rem' : design.cardRadius === 'generous' ? '1.5rem' : '0.9rem',
+    '--cms-shadow': design.shadow === 'none' ? 'none' : design.shadow === 'strong' ? '0 1.5rem 3.4rem rgba(40,8,23,.24)' : '0 .9rem 2.2rem rgba(40,8,23,.12)',
     '--cms-container': design.container === 'wide' ? '1560px' : '1440px',
+    '--cms-page-spacing': design.pageSpacing === 'compact' ? '1.5rem' : design.pageSpacing === 'spacious' ? '6rem' : '3rem',
+    '--cms-section-spacing': design.sectionSpacing === 'compact' ? '3rem' : design.sectionSpacing === 'spacious' ? '9rem' : '6rem',
+    '--cms-grid-gap': design.gridGap === 'compact' ? '.75rem' : design.gridGap === 'spacious' ? '3rem' : '1.5rem',
   };
 }
 
@@ -238,6 +318,7 @@ export const DEFAULT_CLIENT_LIST: ClientContent[] = [
 
 export interface HomeContent {
   design: DesignSystem;
+  homepageSlug: string;
   navItems: NavItem[];
   headerCta: { label: string; href: string };
   hero: {
@@ -266,7 +347,7 @@ export interface HomeContent {
   services: string[];
   sectors: { kicker: string; heading: string; tags: string[] };
   contact: { eyebrow: string; heading: string; body: string };
-  site: { phone: string; phoneHref: string; address: string; addressUrl: string; logo: string };
+  site: { phone: string; phoneHref: string; address: string; addressUrl: string; logo: string; logoLight?: string; logoDark?: string; logoMobile?: string; logoWidth?: string; logoMobileWidth?: string; logoAlignment?: string; logoSpacing?: string; favicon?: string; appIcon?: string };
   footer: { address: string; copyright: string };
   /** Optional, schema-defined sections added through the visual builder. */
   builder?: BuilderPage;
@@ -274,6 +355,7 @@ export interface HomeContent {
 
 export const DEFAULT_HOME: HomeContent = {
   design: DEFAULT_DESIGN_SYSTEM,
+  homepageSlug: 'home',
   navItems: DEFAULT_NAV_ITEMS,
   headerCta: { label: 'Start a conversation', href: '#contact' },
   hero: {
@@ -335,6 +417,15 @@ export const DEFAULT_HOME: HomeContent = {
     address: '1101 AIC Burgundy Empire Tower, Ortigas Center, Pasig City',
     addressUrl: 'https://maps.google.com/?q=AIC+Burgundy+Empire+Tower+Ortigas+Center+Pasig+City',
     logo: '/infostorage-logo.png',
+    logoLight: '/infostorage-logo.png',
+    logoDark: '/infostorage-logo.png',
+    logoMobile: '/infostorage-logo.png',
+    logoWidth: '52px',
+    logoMobileWidth: '46px',
+    logoAlignment: 'left',
+    logoSpacing: '0',
+    favicon: '/favicon.svg',
+    appIcon: '/infostorage-logo.png',
   },
   footer: {
     address: '1101 AIC Burgundy Empire Tower, Ortigas Center, Pasig City',
@@ -398,6 +489,9 @@ const migratedBlockStyles: BuilderNode['styles'] = {
   gap: 'inherit',
   motion: 'none',
   hover: 'none',
+  advanced: {},
+  customClass: '',
+  elementId: '',
 };
 
 const migratedBlockResponsive: BuilderNode['responsive'] = {
@@ -408,6 +502,8 @@ const migratedBlockResponsive: BuilderNode['responsive'] = {
   mobileAlign: 'inherit',
   tabletPadding: 'inherit',
   mobilePadding: 'inherit',
+  tablet: {},
+  mobile: {},
 };
 
 function migratedBlock(id: string, type: BuilderNodeType, props: BuilderNode['props']): BuilderNode {
@@ -420,8 +516,9 @@ export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): Buil
   return {
     version: 1,
     customCss: '',
+    settings: { seoTitle: 'INFOStorage | Enterprise technology, thoughtfully connected', seoDescription: DEFAULT_HOME.hero.description, socialImage: '', hideDefaultHeader: false, hideDefaultFooter: false },
     slots: {
-      afterHero: [migratedBlock('home-hero', 'brand_hero', {
+      afterHero: [migratedBlock('home-header', 'site_header', { useGlobal: true }), migratedBlock('home-hero', 'brand_hero', {
         variant: 'home', eyebrow: content.hero.eyebrow, title: content.hero.titleA, accent: content.hero.titleAccent,
         body: content.hero.description, primaryLabel: content.hero.primaryLabel, primaryHref: content.hero.primaryHref,
         secondaryLabel: content.hero.secondaryLabel, secondaryHref: content.hero.secondaryHref, logo: content.site.logo,
@@ -441,7 +538,7 @@ export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): Buil
         migratedBlock('home-services', 'service_list', { kicker: content.servicesHead.kicker, heading: content.servicesHead.heading, body: content.servicesHead.body, items: content.services.join('\n'), href: '#contact' }),
       ],
       beforeContact: [migratedBlock('home-sectors', 'tag_band', { kicker: content.sectors.kicker, heading: content.sectors.heading, tags: content.sectors.tags.join('\n') })],
-      afterContent: [migratedBlock('home-contact', 'contact_panel', { eyebrow: content.contact.eyebrow, heading: content.contact.heading, body: content.contact.body })],
+      afterContent: [migratedBlock('home-contact', 'contact_panel', { eyebrow: content.contact.eyebrow, heading: content.contact.heading, body: content.contact.body }), migratedBlock('home-footer', 'site_footer', { useGlobal: true })],
     },
   };
 }
@@ -451,8 +548,9 @@ export function createPartnersBuilderPage(content: PartnersContent = DEFAULT_PAR
   return {
     version: 1,
     customCss: '',
+    settings: { seoTitle: 'Partners | INFOStorage', seoDescription: DEFAULT_PARTNERS.hero.description, socialImage: '', hideDefaultHeader: false, hideDefaultFooter: false },
     slots: {
-      afterHero: [migratedBlock('partners-hero', 'brand_hero', {
+      afterHero: [migratedBlock('partners-header', 'site_header', { useGlobal: true }), migratedBlock('partners-hero', 'brand_hero', {
         variant: 'partners', eyebrow: content.hero.eyebrow, title: content.hero.titleA, accent: content.hero.titleAccent,
         body: content.hero.description, primaryLabel: content.hero.ctaLabel, primaryHref: content.hero.ctaHref, logo: content.site.logo,
       })],
@@ -472,7 +570,7 @@ export function createPartnersBuilderPage(content: PartnersContent = DEFAULT_PAR
       afterContent: [migratedBlock('partners-contact', 'partner_contact', {
         eyebrow: 'Find the right fit', heading: 'Let’s match the technology to the work ahead.',
         body: 'Bring us the challenge. We will help you turn it into an integrated, practical next step.', ctaLabel: 'Start a conversation', ctaHref: '/#contact',
-      })],
+      }), migratedBlock('partners-footer', 'site_footer', { useGlobal: true })],
     },
   };
 }
@@ -486,6 +584,7 @@ function navFromDoc(data: Record<string, unknown> | null): NavItem[] | null {
       label: i.label as string,
       href: i.href as string,
       enabled: true,
+      parentId: typeof i.parentId === 'string' && i.parentId ? i.parentId : undefined,
     }));
   return items.length ? items : null;
 }
@@ -498,6 +597,15 @@ function siteFromDoc(data: Record<string, unknown> | null): Partial<HomeContent[
     address: typeof data.address === 'string' && data.address ? data.address : undefined,
     addressUrl: typeof data.addressUrl === 'string' && data.addressUrl ? data.addressUrl : undefined,
     logo: typeof data.logo === 'string' && data.logo ? data.logo : undefined,
+    logoLight: typeof data.logoLight === 'string' && data.logoLight ? data.logoLight : undefined,
+    logoDark: typeof data.logoDark === 'string' && data.logoDark ? data.logoDark : undefined,
+    logoMobile: typeof data.logoMobile === 'string' && data.logoMobile ? data.logoMobile : undefined,
+    logoWidth: typeof data.logoWidth === 'string' && data.logoWidth ? data.logoWidth : undefined,
+    logoMobileWidth: typeof data.logoMobileWidth === 'string' && data.logoMobileWidth ? data.logoMobileWidth : undefined,
+    logoAlignment: typeof data.logoAlignment === 'string' && data.logoAlignment ? data.logoAlignment : undefined,
+    logoSpacing: typeof data.logoSpacing === 'string' && data.logoSpacing ? data.logoSpacing : undefined,
+    favicon: typeof data.favicon === 'string' && data.favicon ? data.favicon : undefined,
+    appIcon: typeof data.appIcon === 'string' && data.appIcon ? data.appIcon : undefined,
     copyright: typeof data.copyright === 'string' && data.copyright ? data.copyright : undefined,
   };
 }
@@ -527,9 +635,17 @@ export async function loadHomeContent(): Promise<HomeContent> {
     }
 
     const { copyright, ...site } = siteFromDoc(settings);
+    content.homepageSlug = str(settings?.homepageSlug, 'home');
     content.design = designSystemFromDoc(settings?.design);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, v]) => v !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
+    if (content.homepageSlug !== 'home') {
+      const homepage = await fetchPublishedDoc('builder_page', content.homepageSlug);
+      if (homepage) {
+        const managedHomepage = normaliseBuilderPage(homepage);
+        if (hasBuilderContent(managedHomepage)) content.builder = managedHomepage;
+      }
+    }
   } catch {
     // Fall back to defaults; the page must never break.
   }

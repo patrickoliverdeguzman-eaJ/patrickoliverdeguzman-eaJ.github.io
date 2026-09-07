@@ -2,13 +2,15 @@
 
 import { CMS_API } from '@/lib/cms-api';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Upload, Trash2, Image as ImageIcon, FileText, Video, File } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { Upload, Trash2, Image as ImageIcon, FileText, Video, File, Search } from 'lucide-react';
 
 interface MediaItem {
   id: string;
   filename: string;
   altText: string;
+  title: string;
+  caption: string;
   mimeType: string;
   byteSize: number;
   createdAt: string;
@@ -34,6 +36,7 @@ export function MediaLibraryPage() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [notice, setNotice] = useState('');
+  const [search, setSearch] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMedia = useCallback(async () => {
@@ -93,7 +96,7 @@ export function MediaLibraryPage() {
         } else {
           setNotice(`Could not upload ${file.name}.`);
         }
-      } catch (err) {
+      } catch {
         setNotice(`Could not upload ${file.name}.`);
       }
     }
@@ -106,9 +109,34 @@ export function MediaLibraryPage() {
   };
 
   const deleteMedia = async (id: string) => {
+    const item = media.find((entry) => entry.id === id);
+    if (!item || !window.confirm(`Delete “${item.filename}”? Existing pages using its URL may show a broken image.`)) return;
     const token = localStorage.getItem('cms_token');
-    await fetch(`${CMS_API}/v1/admin/media/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+    const response = await fetch(`${CMS_API}/v1/admin/media/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+    if (!response.ok) {
+      setNotice('The media file could not be deleted.');
+      return;
+    }
     setMedia((prev) => prev.filter((m) => m.id !== id));
+    setNotice(`${item.filename} was deleted.`);
+  };
+
+  const changeMetadata = (id: string, field: 'altText' | 'title' | 'caption', value: string) => {
+    setMedia((current) => current.map((item) => item.id === id ? { ...item, [field]: value } : item));
+  };
+
+  const saveMetadata = async (item: MediaItem) => {
+    const token = localStorage.getItem('cms_token');
+    const response = await fetch(`${CMS_API}/v1/admin/media/${item.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ altText: item.altText, title: item.title, caption: item.caption }),
+    });
+    if (!response.ok) {
+      setNotice(`Could not save metadata for ${item.filename}.`);
+      return;
+    }
+    setNotice(`Metadata saved for ${item.filename}.`);
   };
 
   const copyUrl = async (item: MediaItem) => {
@@ -132,6 +160,12 @@ export function MediaLibraryPage() {
     if (mimeType === 'application/pdf') return <FileText size={24} color="#735568" />;
     return <File size={24} color="#735568" />;
   };
+
+  const filteredMedia = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return media;
+    return media.filter((item) => [item.filename, item.altText, item.title, item.caption].some((value) => value.toLowerCase().includes(query)));
+  }, [media, search]);
 
   return (
     <div>
@@ -164,6 +198,12 @@ export function MediaLibraryPage() {
 
       {notice && <p style={{ margin: '0 0 1rem', color: '#735568', fontSize: '0.82rem' }}>{notice}</p>}
 
+      <label className="admin-media-search">
+        <Search size={16} aria-hidden="true" />
+        <span className="sr-only">Search media</span>
+        <input type="search" value={search} placeholder="Search images and metadata" onChange={(event) => setSearch(event.target.value)} />
+      </label>
+
       {loading ? (
         <div className="admin-empty"><p>Loading media...</p></div>
       ) : media.length === 0 ? (
@@ -175,7 +215,7 @@ export function MediaLibraryPage() {
         </div>
       ) : (
         <div className="admin-media-grid">
-          {media.map((item) => (
+          {filteredMedia.map((item) => (
             <div key={item.id} className="admin-media-item">
               <div style={{ height: 140, display: 'grid', placeItems: 'center', background: '#faf5f7', overflow: 'hidden' }}>
                 {item.mimeType.startsWith('image/') ? (
@@ -187,6 +227,11 @@ export function MediaLibraryPage() {
               <div className="info">
                 <p style={{ fontWeight: 600 }}>{item.filename}</p>
                 <p>{formatSize(item.byteSize)}</p>
+                {item.mimeType.startsWith('image/') && <div className="admin-media-metadata">
+                  <label>Alternative text<input value={item.altText} maxLength={240} onChange={(event) => changeMetadata(item.id, 'altText', event.target.value)} onBlur={() => void saveMetadata(item)} /></label>
+                  <label>Title<input value={item.title} maxLength={240} onChange={(event) => changeMetadata(item.id, 'title', event.target.value)} onBlur={() => void saveMetadata(item)} /></label>
+                  <label>Caption<textarea value={item.caption} maxLength={500} rows={2} onChange={(event) => changeMetadata(item.id, 'caption', event.target.value)} onBlur={() => void saveMetadata(item)} /></label>
+                </div>}
                 <button className="admin-btn admin-btn-secondary" style={{ marginTop: '0.5rem', padding: '0.25rem 0.5rem', fontSize: '0.72rem' }} onClick={() => void copyUrl(item)} type="button">
                   Copy URL
                 </button>
@@ -196,6 +241,7 @@ export function MediaLibraryPage() {
               </div>
             </div>
           ))}
+          {!filteredMedia.length && <div className="admin-empty"><p>No media matches “{search}”.</p></div>}
         </div>
       )}
     </div>

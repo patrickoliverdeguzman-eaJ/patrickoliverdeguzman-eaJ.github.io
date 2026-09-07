@@ -1,15 +1,45 @@
 export const BUILDER_NODE_TYPES = [
   'section',
   'container',
+  'row',
   'columns',
   'column',
+  'grid',
   'card',
   'heading',
   'text',
+  'rich_text',
   'image',
+  'video',
+  'icon',
   'button',
+  'link',
+  'list',
   'divider',
   'spacer',
+  'badge',
+  'accordion',
+  'tabs',
+  'modal',
+  'alert',
+  'tooltip',
+  'cta',
+  'feature_grid',
+  'testimonials',
+  'statistics',
+  'pricing',
+  'faq',
+  'site_header',
+  'menu',
+  'breadcrumb',
+  'site_footer',
+  'form',
+  'input',
+  'textarea_field',
+  'select_field',
+  'checkbox',
+  'radio_group',
+  'submit',
   'brand_hero',
   'home_intro',
   'split_intro',
@@ -26,6 +56,21 @@ export const BUILDER_NODE_TYPES = [
 ] as const;
 
 export type BuilderNodeType = (typeof BUILDER_NODE_TYPES)[number];
+
+export const BUILDER_ADVANCED_STYLE_KEYS = [
+  'display', 'flexDirection', 'justifyContent', 'alignItems', 'flexWrap',
+  'gridTemplateColumns', 'gridTemplateRows', 'position',
+  'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
+  'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'gap',
+  'customWidth', 'minWidth', 'maxWidth', 'height', 'minHeight', 'maxHeight',
+  'backgroundColor', 'backgroundImage', 'backgroundGradient', 'color',
+  'borderStyle', 'borderWidth', 'borderColor', 'borderRadius', 'boxShadow', 'opacity',
+  'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
+  'textAlign', 'textTransform',
+] as const;
+
+export type BuilderAdvancedStyleKey = (typeof BUILDER_ADVANCED_STYLE_KEYS)[number];
+export type BuilderAdvancedStyles = Partial<Record<BuilderAdvancedStyleKey, string>>;
 export type BuilderSlot =
   | 'afterHero'
   | 'afterApproach'
@@ -49,6 +94,9 @@ export type BuilderNode = {
     gap: 'inherit' | 'compact' | 'regular' | 'spacious';
     motion: 'none' | 'reveal' | 'float';
     hover: 'none' | 'lift';
+    advanced: BuilderAdvancedStyles;
+    customClass: string;
+    elementId: string;
   };
   responsive: {
     visibility: 'all' | 'desktop' | 'mobile';
@@ -58,6 +106,8 @@ export type BuilderNode = {
     mobileAlign: 'inherit' | 'left' | 'center' | 'right';
     tabletPadding: 'inherit' | 'compact' | 'regular' | 'spacious';
     mobilePadding: 'inherit' | 'compact' | 'regular' | 'spacious';
+    tablet: BuilderAdvancedStyles;
+    mobile: BuilderAdvancedStyles;
   };
   children: BuilderNode[];
 };
@@ -65,6 +115,13 @@ export type BuilderNode = {
 export type BuilderPage = {
   version: 1;
   slots: Record<BuilderSlot, BuilderNode[]>;
+  settings: {
+    seoTitle: string;
+    seoDescription: string;
+    socialImage: string;
+    hideDefaultHeader: boolean;
+    hideDefaultFooter: boolean;
+  };
   /** Page-specific CSS is intentionally separate from global design tokens.
    * It is useful when faithfully recreating an existing page treatment. */
   customCss: string;
@@ -92,6 +149,9 @@ const defaultStyles: BuilderNode['styles'] = {
   gap: 'regular',
   motion: 'none',
   hover: 'none',
+  advanced: {},
+  customClass: '',
+  elementId: '',
 };
 
 // Branded composition blocks own their internal reading width and visual
@@ -99,6 +159,9 @@ const defaultStyles: BuilderNode['styles'] = {
 // otherwise a missing legacy `styles.width` value makes the section inherit
 // the generic 1120px content limit and exposes blank space at desktop sizes.
 const fullBleedBlockTypes = new Set<BuilderNodeType>([
+  'site_header',
+  'site_footer',
+  'cta',
   'brand_hero',
   'home_intro',
   'split_intro',
@@ -126,7 +189,18 @@ const defaultResponsive: BuilderNode['responsive'] = {
   mobileAlign: 'inherit',
   tabletPadding: 'inherit',
   mobilePadding: 'inherit',
+  tablet: {},
+  mobile: {},
 };
+
+export const BUILDER_CONTAINER_NODE_TYPES = new Set<BuilderNodeType>([
+  'section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'form',
+  'site_header', 'site_footer',
+]);
+
+export function canContainBuilderChildren(type: BuilderNodeType): boolean {
+  return BUILDER_CONTAINER_NODE_TYPES.has(type);
+}
 
 const defaultSlots = (): Record<BuilderSlot, BuilderNode[]> => ({
   afterHero: [],
@@ -145,7 +219,7 @@ function id(): string {
 }
 
 export function emptyBuilderPage(): BuilderPage {
-  return { version: 1, slots: defaultSlots(), customCss: '' };
+  return { version: 1, slots: defaultSlots(), settings: { seoTitle: '', seoDescription: '', socialImage: '', hideDefaultHeader: false, hideDefaultFooter: false }, customCss: '' };
 }
 
 function readableBriefTitle(brief: string): string {
@@ -170,7 +244,7 @@ export function createPageFromBrief(brief: string): BuilderPage {
     accent: 'made practical.',
     body: 'Use this editable starting point to explain the value, audience, and next step for this page.',
   };
-  page.slots.afterHero = [hero];
+  page.slots.afterHero = [createBuilderNode('site_header'), hero];
 
   const partnerFocused = /partner|ecosystem|alliance|vendor/i.test(brief);
   const serviceFocused = /service|support|managed|consult/i.test(brief);
@@ -183,7 +257,7 @@ export function createPageFromBrief(brief: string): BuilderPage {
     page.slots.afterSolutions = [createBuilderNode('solution_grid')];
     page.slots.afterServices = [serviceFocused ? createBuilderNode('service_list') : createBuilderNode('tag_band')];
   }
-  page.slots.afterContent = [createBuilderNode('contact_panel')];
+  page.slots.afterContent = [createBuilderNode('contact_panel'), createBuilderNode('site_footer')];
   return page;
 }
 
@@ -198,6 +272,33 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
   };
 
   switch (type) {
+    case 'site_header':
+      node.props = {
+        useGlobal: true,
+        logo: '',
+        mobileLogo: '',
+        logoAlt: 'INFOStorage Corporation',
+        logoWidth: '52px',
+        mobileLogoWidth: '46px',
+        logoAlignment: 'left',
+        logoSpacing: '0',
+        links: '',
+        ctaLabel: '',
+        ctaHref: '',
+      };
+      node.styles = { ...defaultStyles, padding: 'inherit', width: 'full', advanced: {}, customClass: '', elementId: '' };
+      break;
+    case 'site_footer':
+      node.props = {
+        useGlobal: true,
+        logo: '',
+        logoAlt: 'INFOStorage Corporation',
+        address: '',
+        copyright: '',
+        links: '',
+      };
+      node.styles = { ...defaultStyles, tone: 'brand', padding: 'inherit', width: 'full', advanced: {}, customClass: '', elementId: '' };
+      break;
     case 'heading':
       node.props = { text: 'A clear new heading', level: 2 };
       break;
@@ -206,8 +307,19 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         text: 'Add supporting copy that explains the value here.',
       };
       break;
+    case 'rich_text':
+      node.props = {
+        text: 'Add a rich text introduction.\n\nStart a new paragraph on a blank line.',
+      };
+      break;
     case 'image':
-      node.props = { src: '', alt: 'Descriptive image' };
+      node.props = { src: '', alt: 'Descriptive image', title: '', caption: '' };
+      break;
+    case 'video':
+      node.props = { src: '', title: 'Video', poster: '', controls: true };
+      break;
+    case 'icon':
+      node.props = { name: 'database', label: 'Database', size: 36 };
       break;
     case 'button':
       node.props = {
@@ -216,12 +328,91 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         variant: 'primary',
       };
       break;
+    case 'link':
+      node.props = { label: 'Learn more', href: '#content', external: false };
+      break;
+    case 'list':
+      node.props = { items: 'First list item\nSecond list item\nThird list item', ordered: false };
+      break;
+    case 'row':
+      node.props = { label: 'New row' };
+      node.styles = { ...defaultStyles, width: 'content', advanced: { display: 'flex', flexWrap: 'wrap' }, customClass: '', elementId: '' };
+      break;
     case 'columns':
       node.props = { columns: 2 };
       node.children = [
         createBuilderNode('column'),
         createBuilderNode('column'),
       ];
+      break;
+    case 'grid':
+      node.props = { columns: 3, label: 'New grid' };
+      node.styles = { ...defaultStyles, width: 'content', advanced: {}, customClass: '', elementId: '' };
+      break;
+    case 'badge':
+      node.props = { text: 'Badge' };
+      break;
+    case 'accordion':
+      node.props = { items: 'What does this include?|Add the answer here.\nCan I customise it?|Yes. Edit every item in the CMS.' };
+      break;
+    case 'tabs':
+      node.props = { items: 'Overview|Add the overview content here.\nDetails|Add supporting details here.' };
+      break;
+    case 'modal':
+      node.props = { triggerLabel: 'Open details', title: 'More information', body: 'Add the modal content here.' };
+      break;
+    case 'alert':
+      node.props = { title: 'Important update', body: 'Add a clear, useful message here.', variant: 'info' };
+      break;
+    case 'tooltip':
+      node.props = { label: 'More information', tip: 'Add a short explanation.' };
+      break;
+    case 'cta':
+      node.props = { eyebrow: 'Next step', heading: 'Ready to move forward?', body: 'Give visitors a clear reason to take the next action.', primaryLabel: 'Start a conversation', primaryHref: '#contact', secondaryLabel: '', secondaryHref: '' };
+      node.styles = { ...defaultStyles, tone: 'gradient', padding: 'spacious', width: 'full', advanced: {}, customClass: '', elementId: '' };
+      break;
+    case 'feature_grid':
+      node.props = { kicker: 'What you get', heading: 'Built for practical outcomes.', body: 'Present the strongest benefits in a flexible card grid.', items: 'Reliable|Explain the first benefit.\nFlexible|Explain the second benefit.\nSupported|Explain the third benefit.' };
+      break;
+    case 'testimonials':
+      node.props = { kicker: 'Client perspective', heading: 'Trusted in demanding environments.', items: 'Add a concise customer quote.|Client name|Role or company' };
+      break;
+    case 'statistics':
+      node.props = { kicker: 'At a glance', heading: 'Results that are easy to understand.', items: '24/7|Support availability\n99.9%|Target availability\n20+|Years of experience' };
+      break;
+    case 'pricing':
+      node.props = { kicker: 'Options', heading: 'Choose the right starting point.', items: 'Essential|Contact us|Core discovery;Recommended architecture|Talk to us\nAdvanced|Custom quote|Detailed planning;Implementation support|Request quote' };
+      break;
+    case 'faq':
+      node.props = { kicker: 'Frequently asked questions', heading: 'What teams usually ask.', items: 'How do we begin?|Start with a short discovery conversation.\nCan this be customised?|Yes. The solution is shaped around your environment.' };
+      break;
+    case 'menu':
+      node.props = { label: 'Menu', items: 'Home|/\nPartners|/partners' };
+      break;
+    case 'breadcrumb':
+      node.props = { items: 'Home|/\nCurrent page|' };
+      break;
+    case 'form':
+      node.props = { title: 'Contact form', action: '', method: 'post', successMessage: 'Thank you. Your message has been received.' };
+      node.children = [createBuilderNode('input'), createBuilderNode('textarea_field'), createBuilderNode('submit')];
+      break;
+    case 'input':
+      node.props = { label: 'Name', name: 'name', placeholder: 'Your name', inputType: 'text', required: true };
+      break;
+    case 'textarea_field':
+      node.props = { label: 'Message', name: 'message', placeholder: 'How can we help?', required: true, rows: 5 };
+      break;
+    case 'select_field':
+      node.props = { label: 'Choose an option', name: 'option', options: 'Option one\nOption two', required: false };
+      break;
+    case 'checkbox':
+      node.props = { label: 'I agree', name: 'agreement', required: false };
+      break;
+    case 'radio_group':
+      node.props = { label: 'Choose one', name: 'choice', options: 'Option one\nOption two', required: false };
+      break;
+    case 'submit':
+      node.props = { label: 'Submit' };
       break;
     case 'spacer':
       node.props = { size: 'regular' };
@@ -401,12 +592,35 @@ function safeProps(value: unknown): BuilderNode['props'] {
   const result: BuilderNode['props'] = {};
   for (const [key, item] of Object.entries(value)) {
     if (!/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(key)) continue;
-    if (typeof item === 'string') result[key] = item.slice(0, 2_000);
+    if (typeof item === 'string') result[key] = item.slice(0, 10_000);
     else if (typeof item === 'number' && Number.isFinite(item))
       result[key] = item;
     else if (typeof item === 'boolean') result[key] = item;
   }
   return result;
+}
+
+function safeAdvancedStyles(value: unknown): BuilderAdvancedStyles {
+  if (!isRecord(value)) return {};
+  const result: BuilderAdvancedStyles = {};
+  for (const key of BUILDER_ADVANCED_STYLE_KEYS) {
+    const item = value[key];
+    if (typeof item !== 'string') continue;
+    const cleaned = item.trim().slice(0, 240);
+    // These values become React style values or scoped media-query declarations.
+    // Keep them declaration-only so braces, semicolons, and markup cannot escape.
+    if (cleaned && !/[{};<>]/.test(cleaned)) result[key] = cleaned;
+  }
+  return result;
+}
+
+function safeClassName(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.split(/\s+/).filter((item) => /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(item)).slice(0, 8).join(' ');
+}
+
+function safeElementId(value: unknown): string {
+  return typeof value === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(value.trim()) ? value.trim() : '';
 }
 
 function nextUniqueId(knownIds: Set<string>): string {
@@ -489,6 +703,15 @@ function normaliseNode(
         ['none', 'lift'] as const,
         'none',
       ),
+      advanced: safeAdvancedStyles(
+        value.styles && isRecord(value.styles) ? value.styles.advanced : undefined,
+      ),
+      customClass: safeClassName(
+        value.styles && isRecord(value.styles) ? value.styles.customClass : undefined,
+      ),
+      elementId: safeElementId(
+        value.styles && isRecord(value.styles) ? value.styles.elementId : undefined,
+      ),
     },
     responsive: {
       visibility: safeChoice(
@@ -528,6 +751,12 @@ function normaliseNode(
         ['inherit', 'compact', 'regular', 'spacious'] as const,
         'inherit',
       ),
+      tablet: safeAdvancedStyles(
+        value.responsive && isRecord(value.responsive) ? value.responsive.tablet : undefined,
+      ),
+      mobile: safeAdvancedStyles(
+        value.responsive && isRecord(value.responsive) ? value.responsive.mobile : undefined,
+      ),
     },
     children,
   };
@@ -537,6 +766,14 @@ export function normaliseBuilderPage(value: unknown): BuilderPage {
   const page = emptyBuilderPage();
   if (!isRecord(value) || !isRecord(value.slots)) return page;
   page.customCss = normalisePageCss(value.customCss);
+  const settings = isRecord(value.settings) ? value.settings : {};
+  page.settings = {
+    seoTitle: safeText(settings.seoTitle, '', 160),
+    seoDescription: safeText(settings.seoDescription, '', 320),
+    socialImage: safeText(settings.socialImage, '', 2_000),
+    hideDefaultHeader: settings.hideDefaultHeader === true,
+    hideDefaultFooter: settings.hideDefaultFooter === true,
+  };
   const knownIds = new Set<string>();
   for (const slot of BUILDER_SLOTS) {
     const rawNodes = value.slots[slot.id];
@@ -556,6 +793,12 @@ export function hasBuilderContent(
   if (!page) return false;
   if (slot) return page.slots[slot].length > 0;
   return BUILDER_SLOTS.some(({ id: slotId }) => page.slots[slotId].length > 0);
+}
+
+export function hasBuilderNodeType(page: BuilderPage | undefined, type: BuilderNodeType): boolean {
+  if (!page) return false;
+  const visit = (nodes: BuilderNode[]): boolean => nodes.some((node) => node.type === type || visit(node.children));
+  return BUILDER_SLOTS.some(({ id: slot }) => visit(page.slots[slot]));
 }
 
 export function updateBuilderNode(
@@ -608,7 +851,7 @@ export function appendBuilderNode(
   }
   let added = false;
   const next = updateBuilderNode(page, parentId, (parent) => {
-    if (!['section', 'container', 'columns', 'column', 'card'].includes(parent.type))
+    if (!canContainBuilderChildren(parent.type))
       return parent;
     added = true;
     return { ...parent, children: [...parent.children, node] };
@@ -652,15 +895,20 @@ export function duplicateBuilderNode(
   const source = findBuilderNode(page, nodeId);
   if (!source) return page;
   const duplicated = cloneBuilderNode(source);
-  for (const { id: slot } of BUILDER_SLOTS) {
-    const index = page.slots[slot].findIndex((node) => node.id === nodeId);
-    if (index >= 0) {
-      const nodes = [...page.slots[slot]];
-      nodes.splice(index + 1, 0, duplicated);
-      return { ...page, slots: { ...page.slots, [slot]: nodes } };
+  let inserted = false;
+  const duplicate = (nodes: BuilderNode[]): BuilderNode[] => {
+    const next: BuilderNode[] = [];
+    for (const node of nodes) {
+      next.push({ ...node, children: duplicate(node.children) });
+      if (node.id === nodeId) {
+        next.push(duplicated);
+        inserted = true;
+      }
     }
-  }
-  return appendBuilderNode(page, 'afterContent', duplicated);
+    return next;
+  };
+  const slots = Object.fromEntries(BUILDER_SLOTS.map(({ id: slot }) => [slot, duplicate(page.slots[slot])])) as BuilderPage['slots'];
+  return inserted ? { ...page, slots } : page;
 }
 
 export function cloneBuilderNode(source: BuilderNode): BuilderNode {
@@ -679,10 +927,15 @@ export function moveBuilderNode(
   page: BuilderPage,
   nodeId: string,
   targetId: string,
+  mode: 'before' | 'inside' = 'before',
 ): BuilderPage {
   if (nodeId === targetId) return page;
   const { page: withoutSource, removed } = removeBuilderNode(page, nodeId);
   if (!removed || !findBuilderNode(withoutSource, targetId)) return page;
+  const target = findBuilderNode(withoutSource, targetId);
+  if (mode === 'inside' && target && canContainBuilderChildren(target.type)) {
+    return updateBuilderNode(withoutSource, targetId, (parent) => ({ ...parent, children: [...parent.children, removed] }));
+  }
   let inserted = false;
   const insert = (nodes: BuilderNode[]): BuilderNode[] => {
     const next: BuilderNode[] = [];

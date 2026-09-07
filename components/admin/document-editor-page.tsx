@@ -204,11 +204,31 @@ export function DocumentEditorPage() {
     window.location.href = adminPath('/admin/documents');
   };
 
+  const restoreArchivedDocument = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents/${documentId}/restore-archived`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const result = (await response.json().catch(() => ({}))) as { document?: DocumentData; error?: string };
+      if (!response.ok || !result.document) throw new Error(result.error ?? 'The archived document could not be restored.');
+      setDoc(normalizeDocument(result.document));
+      setPreview('draft');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The archived document could not be restored.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) return <div className="admin-empty"><p>Loading document...</p></div>;
   if (!documentId) return <div className="admin-empty"><p>No document selected. Pick one from the document list.</p></div>;
   if (!doc) return <div className="admin-empty"><p>Document not found.</p></div>;
 
-  const readOnly = preview === 'published';
+  const readOnly = preview === 'published' || doc.status === 'archived';
   const blocks = readOnly ? (doc.publishedData?.blocks ?? []) : (doc.data.blocks ?? []);
 
   return (
@@ -224,7 +244,7 @@ export function DocumentEditorPage() {
           />
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button className="admin-btn admin-btn-secondary" onClick={saveDocument} disabled={saving || readOnly} type="button">
+          {doc.status === 'archived' ? <button className="admin-btn admin-btn-primary" onClick={restoreArchivedDocument} disabled={saving} type="button">Restore as draft</button> : <><button className="admin-btn admin-btn-secondary" onClick={saveDocument} disabled={saving || readOnly} type="button">
             {saving ? 'Saving...' : 'Save'}
           </button>
           <button className="admin-btn admin-btn-primary" onClick={publishDocument} disabled={readOnly} type="button">
@@ -238,6 +258,7 @@ export function DocumentEditorPage() {
           <button className="admin-btn admin-btn-ghost" onClick={archiveDocument} type="button">
             Archive
           </button>
+          </>}
         </div>
       </div>
 

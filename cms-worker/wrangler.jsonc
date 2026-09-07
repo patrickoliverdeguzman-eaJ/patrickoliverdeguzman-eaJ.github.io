@@ -7,6 +7,9 @@
   "vars": {
     "PUBLIC_ORIGINS": "https://infostorage-enterprise.yasuoxd-yx.chatgpt.site,https://patrickoliverdeguzman-eaj.github.io,http://localhost:3000,http://127.0.0.1:3000"
   },
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
   "d1_databases": [
     {
       "binding": "CMS_DB",

@@ -17,17 +17,35 @@ function setMeta(attribute: 'name' | 'property', key: string, value: string) {
   element.content = value;
 }
 
+function setIcon(rel: 'icon' | 'apple-touch-icon', href: string) {
+  let element = document.head.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!element) {
+    element = document.createElement('link');
+    element.rel = rel;
+    document.head.appendChild(element);
+  }
+  element.href = href;
+}
+
 export default function SiteMetadata() {
   useEffect(() => {
     let cancelled = false;
     const pathname = window.location.pathname;
     if (pathname.startsWith('/admin') || pathname.startsWith('/cms')) return;
-    void fetchPublishedDoc('site_settings', 'global').then((settings) => {
-      if (cancelled || !settings) return;
+    void (async () => {
+      const settings = await fetchPublishedDoc('site_settings', 'global');
+      if (cancelled) return;
+      let pageSlug = pathname.includes('partners') ? 'partners' : pathname.includes('custom') ? new URLSearchParams(window.location.search).get('page') ?? '' : 'home';
+      if (pageSlug === 'home') pageSlug = text(settings?.homepageSlug) ?? 'home';
+      const page = pageSlug ? await fetchPublishedDoc('builder_page', pageSlug) : null;
+      const pageSettings = page && typeof page.settings === 'object' && page.settings !== null ? page.settings as Record<string, unknown> : null;
+      if (cancelled) return;
 
-      const title = text(settings.defaultSeoTitle);
-      const description = text(settings.defaultSeoDescription);
-      const image = text(settings.ogImage);
+      const title = text(pageSettings?.seoTitle) ?? text(settings?.defaultSeoTitle);
+      const description = text(pageSettings?.seoDescription) ?? text(settings?.defaultSeoDescription);
+      const image = text(pageSettings?.socialImage) ?? text(settings?.ogImage);
+      const favicon = text(settings?.favicon);
+      const appIcon = text(settings?.appIcon);
 
       if (title) {
         document.title = title;
@@ -43,7 +61,9 @@ export default function SiteMetadata() {
         setMeta('property', 'og:image', image);
         setMeta('name', 'twitter:image', image);
       }
-    });
+      if (favicon) setIcon('icon', favicon);
+      if (appIcon) setIcon('apple-touch-icon', appIcon);
+    })();
     return () => {
       cancelled = true;
     };
