@@ -101,7 +101,7 @@ const BUILDER_NODE_TYPES = new Set([
   'site_header', 'menu', 'breadcrumb', 'site_footer', 'form', 'input',
   'textarea_field', 'select_field', 'checkbox', 'radio_group', 'submit',
   'brand_hero', 'split_intro',
-  'principle_grid', 'solution_grid', 'continuity_panel', 'service_list',
+  'principle_grid', 'solution_grid', 'solution_card', 'continuity_panel', 'service_list', 'service_row',
   'tag_band', 'contact_panel', 'partner_directory', 'logo_grid', 'method_list',
   'home_intro', 'partner_contact',
 ]);
@@ -152,8 +152,10 @@ const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
   split_intro: new Set(['kicker', 'heading', 'accent', 'body', 'linkLabel', 'linkHref']),
   principle_grid: new Set(['items']),
   solution_grid: new Set(['kicker', 'heading', 'body', 'items']),
+  solution_card: new Set(['title', 'body', 'features', 'href']),
   continuity_panel: new Set(['eyebrow', 'heading', 'body', 'ctaLabel', 'ctaHref']),
   service_list: new Set(['kicker', 'heading', 'body', 'items', 'href']),
+  service_row: new Set(['text', 'href']),
   tag_band: new Set(['kicker', 'heading', 'tags']),
   contact_panel: new Set(['eyebrow', 'heading', 'body', 'primaryLabel', 'primaryHref', 'secondaryLabel', 'secondaryHref']),
   partner_directory: new Set(['kicker', 'heading', 'body', 'note', 'items']),
@@ -163,7 +165,7 @@ const BUILDER_PROP_KEYS: Record<string, ReadonlySet<string>> = {
 };
 const BUILDER_CONTAINER_TYPES = new Set([
   'section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'form',
-  'site_header', 'site_footer',
+  'site_header', 'site_footer', 'solution_grid', 'service_list',
 ]);
 const BUILDER_ADVANCED_STYLE_KEYS = new Set([
   'display', 'flexDirection', 'justifyContent', 'alignItems', 'flexWrap',
@@ -298,6 +300,7 @@ function validateBuilderNode(value: unknown, depth: number, ids: Set<string>): v
   if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(value.id)) throw new HttpError(400, 'A builder block id is invalid.', 'invalid_input');
   if (ids.has(value.id)) throw new HttpError(400, 'Builder block ids must be unique.', 'invalid_input');
   ids.add(value.id);
+  if (!Number.isInteger(value.sortIndex) || (value.sortIndex as number) < 0 || (value.sortIndex as number) > 10_000) throw new HttpError(400, 'A builder block sort index is invalid.', 'invalid_input');
   if (typeof value.type !== 'string' || !BUILDER_NODE_TYPES.has(value.type)) throw new HttpError(400, 'A builder block type is not supported.', 'invalid_input');
   const type = value.type;
   if (!isRecord(value.props) || Object.keys(value.props).length > 20) throw new HttpError(400, 'Builder block properties are invalid.', 'invalid_input');

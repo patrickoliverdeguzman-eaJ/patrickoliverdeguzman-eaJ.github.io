@@ -45,8 +45,10 @@ export const BUILDER_NODE_TYPES = [
   'split_intro',
   'principle_grid',
   'solution_grid',
+  'solution_card',
   'continuity_panel',
   'service_list',
+  'service_row',
   'tag_band',
   'contact_panel',
   'partner_directory',
@@ -81,6 +83,9 @@ export type BuilderSlot =
 
 export type BuilderNode = {
   id: string;
+  /** Stable sibling order persisted with the CMS document. Arrays remain the
+   * transport shape, while sortIndex makes ordering explicit and auditable. */
+  sortIndex: number;
   type: BuilderNodeType;
   props: Record<string, string | number | boolean>;
   styles: {
@@ -195,12 +200,18 @@ const defaultResponsive: BuilderNode['responsive'] = {
 
 export const BUILDER_CONTAINER_NODE_TYPES = new Set<BuilderNodeType>([
   'section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'form',
-  'site_header', 'site_footer',
+  'site_header', 'site_footer', 'solution_grid', 'service_list',
 ]);
 
 export function canContainBuilderChildren(type: BuilderNodeType): boolean {
   return BUILDER_CONTAINER_NODE_TYPES.has(type);
 }
+
+export type BuilderInsertLocation = {
+  slot: BuilderSlot;
+  parentId?: string | null;
+  index: number;
+};
 
 const defaultSlots = (): Record<BuilderSlot, BuilderNode[]> => ({
   afterHero: [],
@@ -258,12 +269,13 @@ export function createPageFromBrief(brief: string): BuilderPage {
     page.slots.afterServices = [serviceFocused ? createBuilderNode('service_list') : createBuilderNode('tag_band')];
   }
   page.slots.afterContent = [createBuilderNode('contact_panel'), createBuilderNode('site_footer')];
-  return page;
+  return reindexBuilderPage(page);
 }
 
 export function createBuilderNode(type: BuilderNodeType): BuilderNode {
   const node: BuilderNode = {
     id: id(),
+    sortIndex: 0,
     type,
     props: {},
     styles: { ...defaultStyles, width: defaultWidthForNode(type) },
@@ -475,9 +487,18 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         kicker: 'Our solutions',
         heading: 'A complete foundation for data computing.',
         body: 'Use the established feature-card grid to frame a connected set of solutions.',
-        items: 'Systems & platforms|Integrated systems built around the workload.|Enterprise storage;Virtualization\nNetwork & security|A secure and reliable network foundation.|Cybersecurity;Compliance\nData protection|Protection strategies aligned to risk.|Backup;Disaster recovery\nMobile & peripherals|Workplace technology that fits the wider environment.|Computing;Peripherals',
       };
+      node.children = [
+        ['Systems & platforms', 'Integrated systems built around the workload.', 'Enterprise storage;Virtualization'],
+        ['Network & security', 'A secure and reliable network foundation.', 'Cybersecurity;Compliance'],
+        ['Data protection', 'Protection strategies aligned to risk.', 'Backup;Disaster recovery'],
+        ['Mobile & peripherals', 'Workplace technology that fits the wider environment.', 'Computing;Peripherals'],
+      ].map(([title, body, features], sortIndex) => ({ ...createBuilderNode('solution_card'), sortIndex, props: { title, body, features, href: '#contact' } }));
       node.styles = { ...defaultStyles, tone: 'muted', padding: 'spacious', width: 'full', hover: 'lift' } as BuilderNode['styles'];
+      break;
+    case 'solution_card':
+      node.props = { title: 'New solution', body: 'Describe this solution.', features: 'Feature one;Feature two', href: '#contact' };
+      node.styles = { ...defaultStyles, width: 'full', hover: 'lift' } as BuilderNode['styles'];
       break;
     case 'continuity_panel':
       node.props = {
@@ -494,10 +515,19 @@ export function createBuilderNode(type: BuilderNodeType): BuilderNode {
         kicker: 'Value added services',
         heading: 'Services that keep technology working in practice.',
         body: 'Use service rows for a concise, scannable list of capabilities.',
-        items: 'Hardware installation and support\nHelpdesk\nConsulting and implementation\nProject management and integration',
         href: '#contact',
       };
+      node.children = [
+        'Hardware installation and support',
+        'Helpdesk',
+        'Consulting and implementation',
+        'Project management and integration',
+      ].map((text, sortIndex) => ({ ...createBuilderNode('service_row'), sortIndex, props: { text, href: '#contact' } }));
       node.styles = { ...defaultStyles, padding: 'spacious', width: 'full' };
+      break;
+    case 'service_row':
+      node.props = { text: 'New service', href: '#contact' };
+      node.styles = { ...defaultStyles, width: 'full' };
       break;
     case 'tag_band':
       node.props = {
@@ -629,10 +659,24 @@ function nextUniqueId(knownIds: Set<string>): string {
   return nextId;
 }
 
+function orderedRawNodes(values: unknown[]): unknown[] {
+  return values
+    .map((value, index) => ({
+      value,
+      index,
+      order: isRecord(value) && Number.isInteger(value.sortIndex) && (value.sortIndex as number) >= 0
+        ? value.sortIndex as number
+        : index,
+    }))
+    .sort((left, right) => left.order - right.order || left.index - right.index)
+    .map(({ value }) => value);
+}
+
 function normaliseNode(
   value: unknown,
   depth = 0,
   knownIds = new Set<string>(),
+  sortIndex = 0,
 ): BuilderNode | null {
   if (!isRecord(value) || depth > 8) return null;
   const type = safeChoice(value.type, BUILDER_NODE_TYPES, 'text');
@@ -641,15 +685,36 @@ function normaliseNode(
     ? suppliedId
     : nextUniqueId(knownIds);
   knownIds.add(nodeId);
-  const rawChildren = Array.isArray(value.children) ? value.children : [];
-  const children = rawChildren
+  const props = safeProps(value.props);
+  let rawChildren: unknown[] = Array.isArray(value.children) ? value.children : [];
+  // Upgrade the two original repeaters to first-class child blocks. Their IDs
+  // are deterministic until the upgraded page is saved, so selection and drag
+  // state remain stable even when loading an older document.
+  if (!rawChildren.length && typeof props.items === 'string' && (type === 'solution_grid' || type === 'service_list')) {
+    const legacyRows = props.items.replaceAll('\\n', '\n').split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 24);
+    rawChildren = legacyRows.map((line, index) => {
+      const childType: BuilderNodeType = type === 'solution_grid' ? 'solution_card' : 'service_row';
+      const child = createBuilderNode(childType);
+      child.id = `${nodeId.slice(0, 58)}-${type === 'solution_grid' ? 'solution' : 'service'}-${index}`;
+      child.sortIndex = index;
+      if (childType === 'solution_card') {
+        const [title = '', body = '', features = ''] = line.split('|').map((part) => part.trim());
+        child.props = { title, body, features, href: '#contact' };
+      } else {
+        child.props = { text: line, href: typeof props.href === 'string' ? props.href : '#contact' };
+      }
+      return child;
+    });
+  }
+  const children = orderedRawNodes(rawChildren)
     .slice(0, 30)
-    .map((child) => normaliseNode(child, depth + 1, knownIds))
+    .map((child, index) => normaliseNode(child, depth + 1, knownIds, index))
     .filter((child): child is BuilderNode => Boolean(child));
   return {
     id: nodeId,
+    sortIndex,
     type,
-    props: safeProps(value.props),
+    props,
     styles: {
       tone: safeChoice(
         value.styles && isRecord(value.styles) ? value.styles.tone : undefined,
@@ -778,9 +843,9 @@ export function normaliseBuilderPage(value: unknown): BuilderPage {
   for (const slot of BUILDER_SLOTS) {
     const rawNodes = value.slots[slot.id];
     if (!Array.isArray(rawNodes)) continue;
-    page.slots[slot.id] = rawNodes
+    page.slots[slot.id] = orderedRawNodes(rawNodes)
       .slice(0, 30)
-      .map((node) => normaliseNode(node, 0, knownIds))
+      .map((node, index) => normaliseNode(node, 0, knownIds, index))
       .filter((node): node is BuilderNode => Boolean(node));
   }
   return page;
@@ -843,25 +908,75 @@ export function appendBuilderNode(
   node: BuilderNode,
   parentId?: string | null,
 ): BuilderPage {
-  if (!parentId) {
+  const parent = parentId ? findBuilderNode(page, parentId) : undefined;
+  const index = parent && canContainBuilderChildren(parent.type)
+    ? parent.children.length
+    : page.slots[slot].length;
+  return insertBuilderNodeAtLocation(page, node, {
+    slot,
+    parentId: parent && canContainBuilderChildren(parent.type) ? parentId : null,
+    index,
+  });
+}
+
+function reindexNodes(nodes: BuilderNode[]): BuilderNode[] {
+  return nodes.map((node, index) => ({
+    ...node,
+    sortIndex: index,
+    children: reindexNodes(node.children),
+  }));
+}
+
+/** Keeps every sibling array and its persisted sortIndex values in lockstep. */
+export function reindexBuilderPage(page: BuilderPage): BuilderPage {
+  return {
+    ...page,
+    slots: Object.fromEntries(
+      BUILDER_SLOTS.map(({ id: slot }) => [slot, reindexNodes(page.slots[slot])]),
+    ) as BuilderPage['slots'],
+  };
+}
+
+function insertIntoLocation(
+  page: BuilderPage,
+  node: BuilderNode,
+  location: BuilderInsertLocation,
+): BuilderPage | null {
+  if (!canInsertBuilderNodeAtLocation(page, node.type, location)) return null;
+  if (!location.parentId) {
+    const siblings = page.slots[location.slot];
+    if (!siblings) return null;
+    const index = Math.min(Math.max(Math.trunc(location.index), 0), siblings.length);
     return {
       ...page,
-      slots: { ...page.slots, [slot]: [...page.slots[slot], node] },
+      slots: {
+        ...page.slots,
+        [location.slot]: [...siblings.slice(0, index), node, ...siblings.slice(index)],
+      },
     };
   }
-  let added = false;
-  const next = updateBuilderNode(page, parentId, (parent) => {
-    if (!canContainBuilderChildren(parent.type))
-      return parent;
-    added = true;
-    return { ...parent, children: [...parent.children, node] };
+
+  let inserted = false;
+  const next = updateBuilderNode(page, location.parentId, (parent) => {
+    if (!canContainBuilderChildren(parent.type)) return parent;
+    const index = Math.min(Math.max(Math.trunc(location.index), 0), parent.children.length);
+    inserted = true;
+    return {
+      ...parent,
+      children: [...parent.children.slice(0, index), node, ...parent.children.slice(index)],
+    };
   });
-  return added
-    ? next
-    : {
-        ...page,
-        slots: { ...page.slots, [slot]: [...page.slots[slot], node] },
-      };
+  return inserted ? next : null;
+}
+
+/** Instantiate a new library/template block at an exact visual insertion zone. */
+export function insertBuilderNodeAtLocation(
+  page: BuilderPage,
+  node: BuilderNode,
+  location: BuilderInsertLocation,
+): BuilderPage {
+  const inserted = insertIntoLocation(page, node, location);
+  return inserted ? reindexBuilderPage(inserted) : page;
 }
 
 export function removeBuilderNode(
@@ -877,15 +992,13 @@ export function removeBuilderNode(
         return false;
       })
       .map((node) => ({ ...node, children: remove(node.children) }));
-  return {
-    page: {
+  const nextPage = {
       ...page,
       slots: Object.fromEntries(
         BUILDER_SLOTS.map(({ id: slot }) => [slot, remove(page.slots[slot])]),
       ) as BuilderPage['slots'],
-    },
-    removed,
   };
+  return { page: removed ? reindexBuilderPage(nextPage) : page, removed };
 }
 
 export function duplicateBuilderNode(
@@ -908,7 +1021,7 @@ export function duplicateBuilderNode(
     return next;
   };
   const slots = Object.fromEntries(BUILDER_SLOTS.map(({ id: slot }) => [slot, duplicate(page.slots[slot])])) as BuilderPage['slots'];
-  return inserted ? { ...page, slots } : page;
+  return inserted ? reindexBuilderPage({ ...page, slots }) : page;
 }
 
 export function cloneBuilderNode(source: BuilderNode): BuilderNode {
@@ -918,7 +1031,75 @@ export function cloneBuilderNode(source: BuilderNode): BuilderNode {
     id: id(),
     children: node.children.map(assignIds),
   });
-  return assignIds(copy);
+  return reindexNodes([assignIds(copy)])[0];
+}
+
+/** Move one existing block without cloning it. All content, responsive values,
+ * CSS and metadata stay on the same stable id. */
+export function moveBuilderNodeToLocation(
+  page: BuilderPage,
+  nodeId: string,
+  location: BuilderInsertLocation,
+): BuilderPage {
+  const source = findBuilderNode(page, nodeId);
+  if (!source || location.parentId === nodeId) return page;
+
+  // Refuse a move into the source subtree. Removing it first makes every one
+  // of its descendants disappear from the remaining page tree.
+  const { page: withoutSource, removed } = removeBuilderNode(page, nodeId);
+  if (!removed) return page;
+  if (location.parentId && !findBuilderNode(withoutSource, location.parentId)) return page;
+
+  let index = location.index;
+  const sourceLocation = findBuilderNodeLocation(page, nodeId);
+  if (
+    sourceLocation &&
+    sourceLocation.slot === location.slot &&
+    (sourceLocation.parentId ?? null) === (location.parentId ?? null) &&
+    sourceLocation.index < index
+  ) {
+    index -= 1;
+  }
+
+  const inserted = insertIntoLocation(withoutSource, removed, { ...location, index });
+  return inserted ? reindexBuilderPage(inserted) : page;
+}
+
+export function findBuilderNodeLocation(
+  page: BuilderPage,
+  nodeId: string,
+): BuilderInsertLocation | undefined {
+  const visit = (
+    nodes: BuilderNode[],
+    slot: BuilderSlot,
+    parentId: string | null,
+  ): BuilderInsertLocation | undefined => {
+    for (let index = 0; index < nodes.length; index += 1) {
+      const node = nodes[index];
+      if (node.id === nodeId) return { slot, parentId, index };
+      const nested = visit(node.children, slot, node.id);
+      if (nested) return nested;
+    }
+  };
+  for (const { id: slot } of BUILDER_SLOTS) {
+    const found = visit(page.slots[slot], slot, null);
+    if (found) return found;
+  }
+}
+
+/** Central placement rule shared by pointer, touch, keyboard and fallback
+ * insertion. Nested design items stay in the matching structured section. */
+export function canInsertBuilderNodeAtLocation(
+  page: BuilderPage,
+  type: BuilderNodeType,
+  location: BuilderInsertLocation,
+): boolean {
+  if (!location.parentId) return type !== 'solution_card' && type !== 'service_row';
+  const parent = findBuilderNode(page, location.parentId);
+  if (!parent || !canContainBuilderChildren(parent.type)) return false;
+  if (parent.type === 'solution_grid') return type === 'solution_card';
+  if (parent.type === 'service_list') return type === 'service_row';
+  return type !== 'solution_card' && type !== 'service_row';
 }
 
 /** Move a block before another block in the same page tree. The operation is
@@ -930,29 +1111,16 @@ export function moveBuilderNode(
   mode: 'before' | 'inside' = 'before',
 ): BuilderPage {
   if (nodeId === targetId) return page;
-  const { page: withoutSource, removed } = removeBuilderNode(page, nodeId);
-  if (!removed || !findBuilderNode(withoutSource, targetId)) return page;
-  const target = findBuilderNode(withoutSource, targetId);
+  const sourceLocation = findBuilderNodeLocation(page, nodeId);
+  const targetLocation = findBuilderNodeLocation(page, targetId);
+  const target = findBuilderNode(page, targetId);
+  if (!sourceLocation || !targetLocation || !target) return page;
   if (mode === 'inside' && target && canContainBuilderChildren(target.type)) {
-    return updateBuilderNode(withoutSource, targetId, (parent) => ({ ...parent, children: [...parent.children, removed] }));
+    return moveBuilderNodeToLocation(page, nodeId, {
+      slot: targetLocation.slot,
+      parentId: targetId,
+      index: target.children.length,
+    });
   }
-  let inserted = false;
-  const insert = (nodes: BuilderNode[]): BuilderNode[] => {
-    const next: BuilderNode[] = [];
-    for (const node of nodes) {
-      if (node.id === targetId) {
-        next.push(removed);
-        inserted = true;
-      }
-      next.push({ ...node, children: insert(node.children) });
-    }
-    return next;
-  };
-  const slots = Object.fromEntries(
-    BUILDER_SLOTS.map(({ id: slot }) => [
-      slot,
-      insert(withoutSource.slots[slot]),
-    ]),
-  ) as BuilderPage['slots'];
-  return inserted ? { ...withoutSource, slots } : page;
+  return moveBuilderNodeToLocation(page, nodeId, targetLocation);
 }

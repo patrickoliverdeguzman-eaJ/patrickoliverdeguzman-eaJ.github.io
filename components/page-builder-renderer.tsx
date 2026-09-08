@@ -2,6 +2,7 @@
 
 import { AlertCircle, ArrowRight, ArrowUpRight, Check, ChevronRight, CircleHelp, Cloud, Code2, Database, Laptop, Menu, Network, Phone, ServerCog, ShieldCheck, Sparkles } from 'lucide-react';
 import { createElement, type CSSProperties } from 'react';
+import { SortableBlockList } from '@/components/admin/builder-dnd';
 import { BUILDER_ADVANCED_STYLE_KEYS, type BuilderAdvancedStyleKey, type BuilderAdvancedStyles, type BuilderNode, type BuilderPage, type BuilderSlot, hasBuilderContent, hasBuilderNodeType } from '@/lib/page-builder';
 
 export type SiteChrome = {
@@ -17,10 +18,10 @@ type PageBuilderRendererProps = {
   slot: BuilderSlot;
   chrome?: SiteChrome;
   editable?: boolean;
+  dragActive?: boolean;
+  activeDragType?: BuilderNode['type'];
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string) => void;
-  onDropNode?: (targetNodeId: string, mode?: 'before' | 'inside') => void;
-  onDragStartNode?: (nodeId: string) => void;
   onUpdateNodeProp?: (nodeId: string, key: string, value: string) => void;
   onSelectNavigationItem?: (itemId: string) => void;
   onUpdateNavigationItem?: (itemId: string, label: string) => void;
@@ -232,16 +233,23 @@ function nodeClasses(node: BuilderNode, editable?: boolean, selectedNodeId?: str
   ].filter(Boolean).join(' ');
 }
 
-function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropNode, onDragStartNode, onUpdateNodeProp, onSelectNavigationItem, onUpdateNavigationItem, chrome, explicitHeader }: Omit<PageBuilderRendererProps, 'page' | 'slot'> & { node: BuilderNode; explicitHeader?: boolean }) {
+function orderedNodes(nodes: BuilderNode[]): BuilderNode[] {
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .sort((left, right) => left.node.sortIndex - right.node.sortIndex || left.index - right.index)
+    .map(({ node }) => node);
+}
+
+function BuilderNodeView({ node, slot, editable, dragActive, activeDragType, selectedNodeId, onSelectNode, onUpdateNodeProp, onSelectNavigationItem, onUpdateNavigationItem, chrome, explicitHeader }: Omit<PageBuilderRendererProps, 'page'> & { node: BuilderNode; explicitHeader?: boolean }) {
   const className = nodeClasses(node, editable, selectedNodeId);
   const interactions: React.HTMLAttributes<HTMLElement> & { 'data-cms-node': string } = { 'data-cms-node': node.id, ...(node.styles.elementId ? { id: node.styles.elementId } : {}), style: advancedInlineStyle(node.styles.advanced), ...(editable ? {
-    draggable: true,
     onClick: (event: React.MouseEvent<HTMLElement>) => { event.preventDefault(); event.stopPropagation(); onSelectNode?.(node.id); },
-    onDragStart: (event: React.DragEvent<HTMLElement>) => { event.stopPropagation(); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-infostorage-builder-node', node.id); onDragStartNode?.(node.id); },
-    onDragOver: (event: React.DragEvent<HTMLElement>) => event.preventDefault(),
-    onDrop: (event: React.DragEvent<HTMLElement>) => { event.preventDefault(); event.stopPropagation(); onDropNode?.(node.id, ['section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'form', 'site_header', 'site_footer'].includes(node.type) ? 'inside' : 'before'); },
   } : {}) };
-  const children = node.children.map((child) => <BuilderNodeView key={child.id} node={child} editable={editable} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onDropNode={onDropNode} onDragStartNode={onDragStartNode} onUpdateNodeProp={onUpdateNodeProp} onSelectNavigationItem={onSelectNavigationItem} onUpdateNavigationItem={onUpdateNavigationItem} chrome={chrome} explicitHeader={explicitHeader} />);
+  const childNodes = orderedNodes(node.children);
+  const renderChild = (child: BuilderNode) => <BuilderNodeView key={child.id} node={child} slot={slot} editable={editable} dragActive={dragActive} activeDragType={activeDragType} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onUpdateNodeProp={onUpdateNodeProp} onSelectNavigationItem={onSelectNavigationItem} onUpdateNavigationItem={onUpdateNavigationItem} chrome={chrome} explicitHeader={explicitHeader} />;
+  const children = editable
+    ? <SortableBlockList nodes={childNodes} slot={slot} parentId={node.id} parentType={node.type} dragActive={Boolean(dragActive)} activeType={activeDragType} renderNode={renderChild} />
+    : childNodes.map(renderChild);
 
   if (node.type === 'site_header') return <header className={className} {...interactions}>{chrome && <SiteHeader chrome={chrome} node={node} editable={editable} onUpdateNodeProp={onUpdateNodeProp} onSelectNavigationItem={onSelectNavigationItem} onUpdateNavigationItem={onUpdateNavigationItem} />}{children}</header>;
   if (node.type === 'site_footer') {
@@ -280,12 +288,18 @@ function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropN
   if (node.type === 'principle_grid') return <section className={`${className} cms-block-principles`} {...interactions}>{records(prop(node, 'items'), 2).map(([title, body], index) => <article key={`${title}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><h3>{title || 'Principle'}</h3><p>{body}</p></article>)}</section>;
 
   if (node.type === 'solution_grid') {
+    return <section className={`${className} solutions-section section-pad`} id="solutions" {...interactions}><div className="solutions-heading reveal"><div><p className="section-kicker">{prop(node, 'kicker')}</p><h2 className="display-heading">{prop(node, 'heading')}</h2></div><p>{prop(node, 'body')}</p></div><div className="solutions-grid">{children}</div></section>;
+  }
+
+  if (node.type === 'solution_card') {
     const iconSet = [ServerCog, Network, Database, Laptop];
-    return <section className={`${className} solutions-section section-pad`} id="solutions" {...interactions}><div className="solutions-heading reveal"><div><p className="section-kicker">{prop(node, 'kicker')}</p><h2 className="display-heading">{prop(node, 'heading')}</h2></div><p>{prop(node, 'body')}</p></div><div className="solutions-grid">{records(prop(node, 'items'), 3).map(([title, body, features], index) => { const Icon = iconSet[index % iconSet.length]; return <article className="solution-card reveal" key={`${title}-${index}`}><div className="solution-topline"><span>{String(index + 1).padStart(2, '0')}</span><Icon size={25} strokeWidth={1.6} /></div><h3>{title || 'Solution'}</h3><p>{body}</p><ul>{features.split(';').filter(Boolean).slice(0, 8).map((feature) => <li key={feature}><Check size={15} strokeWidth={2.4} />{feature.trim()}</li>)}</ul><a href={siteHref('#contact', chrome)}>Discuss this solution <ArrowUpRight size={18} /></a></article>; })}</div></section>;
+    const Icon = iconSet[node.sortIndex % iconSet.length];
+    return <article className={`${className} solution-card reveal`} {...interactions}><div className="solution-topline"><span>{String(node.sortIndex + 1).padStart(2, '0')}</span><Icon size={25} strokeWidth={1.6} /></div><h3><EditableValue node={node} field="title" fallback="Solution" editable={editable} onUpdateNodeProp={onUpdateNodeProp} /></h3><p><EditableValue node={node} field="body" editable={editable} onUpdateNodeProp={onUpdateNodeProp} /></p><ul>{prop(node, 'features').split(';').filter(Boolean).slice(0, 8).map((feature) => <li key={feature}><Check size={15} strokeWidth={2.4} />{feature.trim()}</li>)}</ul><a href={siteHref(prop(node, 'href', '#contact'), chrome)}>Discuss this solution <ArrowUpRight size={18} /></a></article>;
   }
 
   if (node.type === 'continuity_panel') return <section className={`${className} continuity-panel section-pad`} {...interactions}><div className="continuity-art" aria-hidden="true"><div className="orb orb-one" /><div className="orb orb-two" /><div className="circuit-line line-one" /><div className="circuit-line line-two" /><span>01</span><span>10</span><span>11</span></div><div className="continuity-copy reveal"><p className="eyebrow">{prop(node, 'eyebrow')}</p><h2>{prop(node, 'heading')}</h2><p>{prop(node, 'body')}</p><a className="button button-sand" href={siteHref(prop(node, 'ctaHref', '#contact'), chrome)}>{prop(node, 'ctaLabel', 'Start a conversation')} <ArrowRight size={18} /></a></div></section>;
-  if (node.type === 'service_list') return <section className={`${className} services-section section-pad`} id="services" {...interactions}><div className="services-head reveal"><p className="section-kicker">{prop(node, 'kicker')}</p><h2 className="display-heading">{prop(node, 'heading')}</h2><p>{prop(node, 'body')}</p></div><div className="service-list">{lines(prop(node, 'items')).map((item, index) => <a className="service-row reveal" href={siteHref(prop(node, 'href', '#contact'), chrome)} key={`${item}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><strong>{item}</strong><ArrowUpRight size={22} strokeWidth={1.7} /></a>)}</div></section>;
+  if (node.type === 'service_list') return <section className={`${className} services-section section-pad`} id="services" {...interactions}><div className="services-head reveal"><p className="section-kicker">{prop(node, 'kicker')}</p><h2 className="display-heading">{prop(node, 'heading')}</h2><p>{prop(node, 'body')}</p></div><div className="service-list">{children}</div></section>;
+  if (node.type === 'service_row') return <a className={`${className} service-row reveal`} href={siteHref(prop(node, 'href', '#contact'), chrome)} {...interactions}><span>{String(node.sortIndex + 1).padStart(2, '0')}</span><strong><EditableValue node={node} field="text" fallback="Service" editable={editable} onUpdateNodeProp={onUpdateNodeProp} /></strong><ArrowUpRight size={22} strokeWidth={1.7} /></a>;
   if (node.type === 'tag_band') return <section className={`${className} sectors section-pad`} {...interactions}><div className="sectors-copy reveal"><p className="section-kicker">{prop(node, 'kicker')}</p><h2 className="display-heading">{prop(node, 'heading')}</h2></div><div className="sector-tags reveal" aria-label="Sectors served">{lines(prop(node, 'tags')).map((tag) => <span key={tag}>{tag}</span>)}</div></section>;
   if (node.type === 'contact_panel') return <section className={`${className} contact-panel`} id="contact" {...interactions}><div className="contact-orbit" aria-hidden="true" /><div className="contact-content reveal"><p className="eyebrow">{prop(node, 'eyebrow')}</p><h2>{prop(node, 'heading')}</h2><p>{prop(node, 'body')}</p><div className="contact-actions"><a className="button button-primary" href={siteHref(chrome?.site.phoneHref ?? prop(node, 'primaryHref', '#contact'), chrome)}><Phone size={17} /> {chrome?.site.phone ?? prop(node, 'primaryLabel', 'Contact us')}</a>{chrome?.site.address && <a className="contact-address" href={siteHref(chrome.site.addressUrl, chrome)} target="_blank" rel="noreferrer">{chrome.site.address} <ArrowUpRight size={16} /></a>}</div></div></section>;
 
@@ -341,8 +355,9 @@ function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropN
 }
 
 export function PageBuilderRenderer(props: PageBuilderRendererProps) {
-  if (!hasBuilderContent(props.page, props.slot)) return null;
-  const nodes = props.page?.slots[props.slot] ?? [];
+  if (!props.editable && !hasBuilderContent(props.page, props.slot)) return null;
+  const nodes = orderedNodes(props.page?.slots[props.slot] ?? []);
   const css = responsiveCss(nodes);
-  return <div className="page-builder-slot" data-builder-slot={props.slot}>{css && <style data-cms-responsive-styles dangerouslySetInnerHTML={{ __html: css }} />}{nodes.map((node) => <BuilderNodeView key={node.id} node={node} explicitHeader={Boolean(props.page?.settings.hideDefaultHeader) || hasBuilderNodeType(props.page, 'site_header')} {...props} />)}</div>;
+  const renderNode = (node: BuilderNode) => <BuilderNodeView key={node.id} node={node} explicitHeader={Boolean(props.page?.settings.hideDefaultHeader) || hasBuilderNodeType(props.page, 'site_header')} {...props} />;
+  return <div className="page-builder-slot" data-builder-slot={props.slot}>{css && <style data-cms-responsive-styles dangerouslySetInnerHTML={{ __html: css }} />}{props.editable ? <SortableBlockList nodes={nodes} slot={props.slot} dragActive={Boolean(props.dragActive)} activeType={props.activeDragType} renderNode={renderNode} /> : nodes.map(renderNode)}</div>;
 }

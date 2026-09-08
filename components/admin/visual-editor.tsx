@@ -2,6 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  MeasuringStrategy,
+  PointerSensor,
+  TouchSensor,
+  pointerWithin,
+  rectIntersection,
+  useSensor,
+  useSensors,
+  type CollisionDetection,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core';
+import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
+import {
   Archive,
   ArrowDown,
   ArrowLeft,
@@ -34,21 +50,24 @@ import { CmsSitePage } from '@/components/cms-site-page';
 import { CustomPageLayout } from '@/components/custom-page-layout';
 import { ElementCssEditor } from '@/components/admin/element-css-editor';
 import { BuilderStyleControls } from '@/components/admin/builder-style-controls';
+import { BlockLibraryItem, BuilderDragOverlay, type BuilderDragData } from '@/components/admin/builder-dnd';
 import {
   appendBuilderNode,
-  BUILDER_NODE_TYPES,
   BUILDER_SLOTS,
   cloneBuilderNode,
+  canInsertBuilderNodeAtLocation,
   canContainBuilderChildren,
   createPageFromBrief,
   type BuilderNode,
   type BuilderPage,
+  type BuilderInsertLocation,
   type BuilderNodeType,
   createBuilderNode,
   duplicateBuilderNode,
   emptyBuilderPage,
   findBuilderNode,
-  moveBuilderNode,
+  insertBuilderNodeAtLocation,
+  moveBuilderNodeToLocation,
   normaliseBuilderPage,
   removeBuilderNode,
   updateBuilderNode,
@@ -91,6 +110,11 @@ type Device = 'desktop' | 'tablet' | 'mobile';
 type FieldRef = { documentId: string; key: string };
 type HeaderLink = { id: string; label: string; href: string; enabled: boolean; parentId?: string };
 
+const builderCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length ? pointerCollisions : rectIntersection(args);
+};
+
 type Layer = {
   id: string;
   label: string;
@@ -125,8 +149,10 @@ const DESIGN_BLOCKS: Array<{ type: BuilderNodeType; label: string; Icon: typeof 
   { type: 'split_intro', label: 'Split introduction', Icon: Text },
   { type: 'principle_grid', label: 'Principle grid', Icon: Columns3 },
   { type: 'solution_grid', label: 'Solution grid', Icon: Box },
+  { type: 'solution_card', label: 'Solution card', Icon: Box },
   { type: 'continuity_panel', label: 'Continuity panel', Icon: Layers3 },
   { type: 'service_list', label: 'Service list', Icon: Text },
+  { type: 'service_row', label: 'Service row', Icon: Text },
   { type: 'tag_band', label: 'Tag band', Icon: Box },
   { type: 'contact_panel', label: 'Contact panel', Icon: MousePointer2 },
   { type: 'partner_directory', label: 'Partner directory', Icon: Box },
@@ -241,16 +267,17 @@ const DESIGN_BLOCK_FIELDS: Partial<Record<BuilderNodeType, BuilderField[]>> = {
   principle_grid: [{ key: 'items', label: 'Principles — one “Title | Description” per line', multiline: true }],
   solution_grid: [
     { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
-    { key: 'items', label: 'Solutions — “Title | Description | Feature; Feature” per line', multiline: true },
   ],
+  solution_card: [{ key: 'title', label: 'Solution title' }, { key: 'body', label: 'Description', multiline: true }, { key: 'features', label: 'Features — separate with semicolons', multiline: true }, { key: 'href', label: 'Destination' }],
   continuity_panel: [
     { key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
     { key: 'ctaLabel', label: 'Button label' }, { key: 'ctaHref', label: 'Button destination' },
   ],
   service_list: [
     { key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
-    { key: 'items', label: 'Services — one per line', multiline: true }, { key: 'href', label: 'Service destination' },
+    { key: 'href', label: 'Default service destination' },
   ],
+  service_row: [{ key: 'text', label: 'Service name' }, { key: 'href', label: 'Destination' }],
   tag_band: [{ key: 'kicker', label: 'Kicker' }, { key: 'heading', label: 'Heading' }, { key: 'tags', label: 'Tags — one per line', multiline: true }],
   contact_panel: [
     { key: 'eyebrow', label: 'Eyebrow' }, { key: 'heading', label: 'Heading' }, { key: 'body', label: 'Supporting copy', multiline: true },
@@ -288,8 +315,6 @@ const DESIGN_BLOCK_REPEATERS: Partial<Record<BuilderNodeType, DesignBlockRepeate
   brand_hero: { key: 'capabilities', label: 'Capabilities', itemLabel: 'capability', inputs: [{ label: 'Label', placeholder: 'For example: Data protection' }] },
   home_intro: { key: 'items', label: 'Principles', itemLabel: 'principle', inputs: [{ label: 'Title', placeholder: 'For example: Specialized' }, { label: 'Description', placeholder: 'Describe this principle', multiline: true }] },
   principle_grid: { key: 'items', label: 'Principles', itemLabel: 'principle', inputs: [{ label: 'Title', placeholder: 'For example: Specialized' }, { label: 'Description', placeholder: 'Describe this principle', multiline: true }] },
-  solution_grid: { key: 'items', label: 'Solutions', itemLabel: 'solution', inputs: [{ label: 'Title', placeholder: 'For example: Data protection' }, { label: 'Description', placeholder: 'Describe the solution', multiline: true }, { label: 'Included features', placeholder: 'One feature per line', multiline: true, lineSeparator: ';' }] },
-  service_list: { key: 'items', label: 'Services', itemLabel: 'service', inputs: [{ label: 'Service name', placeholder: 'For example: Helpdesk' }] },
   tag_band: { key: 'tags', label: 'Sector tags', itemLabel: 'tag', inputs: [{ label: 'Tag', placeholder: 'For example: Financial services' }] },
   partner_directory: { key: 'items', label: 'Partners', itemLabel: 'partner', inputs: [{ label: 'Partner name', placeholder: 'For example: Oracle' }, { label: 'Focus', placeholder: 'For example: Cloud infrastructure', multiline: true }] },
   logo_grid: { key: 'items', label: 'Client logos', itemLabel: 'client', inputs: [{ label: 'Client name', placeholder: 'For example: Global Payments' }, { label: 'Logo image URL', placeholder: 'Paste an uploaded image URL' }, { label: 'Optional logo treatment', placeholder: 'Leave blank unless already used' }] },
@@ -544,7 +569,7 @@ export function VisualEditor() {
   const [initializing, setInitializing] = useState(false);
   const [activeBuilderSlot, setActiveBuilderSlot] = useState(BUILDER_SLOTS[0].id);
   const [selectedBuilderNodeId, setSelectedBuilderNodeId] = useState<string | null>(null);
-  const [draggedBuilderNodeId, setDraggedBuilderNodeId] = useState<string | null>(null);
+  const [activeBuilderDrag, setActiveBuilderDrag] = useState<BuilderDragData | null>(null);
   const [activeCustomPageId, setActiveCustomPageId] = useState<string | null>(null);
   const [addingPage, setAddingPage] = useState(false);
   const [newPageTitle, setNewPageTitle] = useState('');
@@ -558,6 +583,33 @@ export function VisualEditor() {
   const [revisions, setRevisions] = useState<CmsRevision[]>([]);
   const [scheduleAt, setScheduleAt] = useState('');
   const canvasRef = useRef<HTMLDivElement>(null);
+  const documentSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const builderSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const queueDocumentSave = useCallback((document: CmsDocument, note: string) => {
+    const save = documentSaveQueueRef.current.then(async () => {
+      const token = localStorage.getItem('cms_token');
+      const response = await fetch(`${CMS_API}/v1/admin/documents/${document.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: document.title,
+          slug: document.slug,
+          data: document.data,
+          note,
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? `Could not save ${document.title}.`);
+    });
+    // Keep the queue usable after a failed request while returning the original
+    // promise to the caller so it can show the error and preserve dirty state.
+    documentSaveQueueRef.current = save.then(() => undefined, () => undefined);
+    return save;
+  }, []);
 
   const load = useCallback(async () => {
     setStatus('loading');
@@ -909,6 +961,11 @@ export function VisualEditor() {
     const canContain = Boolean(selectedNode && canContainBuilderChildren(selectedNode.type));
     const node = createBuilderNode(type);
     const nextPage = appendBuilderNode(currentPage, activeBuilderSlot, node, canContain ? selectedNode?.id : undefined);
+    if (nextPage === currentPage) {
+      setStatus('error');
+      setMessage(type === 'solution_card' ? 'Drop this inside a Solution grid.' : type === 'service_row' ? 'Drop this inside a Service list.' : 'This block is not allowed at the selected location.');
+      return;
+    }
     const nextDocuments = (document.id === builderDocument?.id ? documents : [...documents, document]).map((entry) =>
       entry.id === document.id ? { ...entry, data: nextPage } : entry,
     );
@@ -917,6 +974,51 @@ export function VisualEditor() {
     setSelected(null);
     setStatus('saved');
     setMessage(`${type.replace('_', ' ')} added to the draft`);
+  };
+
+  const persistBuilderDrop = async (document: CmsDocument, nextPage: BuilderPage) => {
+    try {
+      await queueDocumentSave(
+        { ...document, data: nextPage },
+        'Reordered with visual drag and drop',
+      );
+      setStatus('saved');
+      setMessage('Block order saved');
+    } catch (error) {
+      // Keep the document dirty so the normal autosave safely retries the
+      // complete latest draft after a transient order-save failure.
+      setStatus('error');
+      setMessage(error instanceof Error ? error.message : 'The new block order could not be saved.');
+    }
+  };
+
+  const addBuilderElementAtLocation = async (
+    type: BuilderNodeType,
+    location: BuilderInsertLocation,
+  ) => {
+    const document = await ensureBuilderDocument();
+    if (!document) return;
+    const currentPage = document.id === builderDocument?.id
+      ? builderPage
+      : normaliseBuilderPage(document.data);
+    const node = createBuilderNode(type);
+    const nextPage = insertBuilderNodeAtLocation(currentPage, node, location);
+    if (nextPage === currentPage) {
+      setStatus('error');
+      setMessage('That block type is not allowed at this insertion point.');
+      return;
+    }
+    const sourceDocuments = document.id === builderDocument?.id ? documents : [...documents, document];
+    markChanged(
+      sourceDocuments.map((entry) => entry.id === document.id ? { ...entry, data: nextPage } : entry),
+      [document.id],
+    );
+    setActiveBuilderSlot(location.slot);
+    setSelectedBuilderNodeId(node.id);
+    setSelected(null);
+    setStatus('saving');
+    setMessage(`${type.replaceAll('_', ' ')} inserted — saving order…`);
+    void persistBuilderDrop(document, nextPage);
   };
 
   const changeBuilderNode = (nodeId: string, change: (node: BuilderNode) => BuilderNode) => {
@@ -992,14 +1094,55 @@ export function VisualEditor() {
     setMessage('Reusable block inserted into the draft');
   };
 
-  const moveBuilderBlock = (targetId: string, requestedMode: 'before' | 'inside' = 'before') => {
-    if (!draggedBuilderNodeId) return;
-    const source = findBuilderNode(builderPage, draggedBuilderNodeId);
-    const target = findBuilderNode(builderPage, targetId);
-    const mode = requestedMode === 'inside' && source && target && source.type !== target.type ? 'inside' : 'before';
-    updateBuilder(moveBuilderNode(builderPage, draggedBuilderNodeId, targetId, mode));
-    setDraggedBuilderNodeId(null);
-    setMessage('Custom block order updated');
+  const clearBuilderDrag = () => {
+    setActiveBuilderDrag(null);
+    document.documentElement.classList.remove('cms-builder-is-dragging');
+  };
+
+  const handleBuilderDragStart = (event: DragStartEvent) => {
+    const data = event.active.data.current as BuilderDragData | undefined;
+    if (!data || data.kind === 'insert') return;
+    setActiveBuilderDrag(data);
+    document.documentElement.classList.add('cms-builder-is-dragging');
+  };
+
+  const handleBuilderDragEnd = (event: DragEndEvent) => {
+    const active = event.active.data.current as BuilderDragData | undefined;
+    const over = event.over?.data.current as BuilderDragData | undefined;
+    clearBuilderDrag();
+    if (!active || active.kind === 'insert' || !over) return;
+    let location: BuilderInsertLocation | undefined;
+    if (over.kind === 'insert') {
+      location = over.location;
+    } else if (over.kind === 'node') {
+      const translated = event.active.rect.current.translated;
+      const keyboardMove = event.activatorEvent instanceof KeyboardEvent;
+      const after = keyboardMove
+        ? event.delta.y > 0
+        : translated
+          ? translated.top + translated.height / 2 > event.over!.rect.top + event.over!.rect.height / 2
+          : event.delta.y > 0;
+      location = { ...over.location, index: over.location.index + (after ? 1 : 0) };
+    }
+    if (!location || !canInsertBuilderNodeAtLocation(builderPage, active.blockType, location)) {
+      setMessage('That block cannot be placed at this location.');
+      return;
+    }
+
+    if (active.kind === 'library') {
+      void addBuilderElementAtLocation(active.blockType, location);
+      return;
+    }
+    if (active.kind !== 'node' || !builderDocument) return;
+
+    const nextPage = moveBuilderNodeToLocation(builderPage, active.nodeId, location);
+    if (nextPage === builderPage) return;
+    updateBuilder(nextPage);
+    setActiveBuilderSlot(location.slot);
+    setSelectedBuilderNodeId(active.nodeId);
+    setStatus('saving');
+    setMessage('Saving new block order…');
+    void persistBuilderDrop(builderDocument, nextPage);
   };
 
   const selectDocument = (document: CmsDocument, key = '__title') => {
@@ -1068,31 +1211,10 @@ export function VisualEditor() {
       setStatus('saving');
       setMessage('Saving draft…');
       try {
-        const token = localStorage.getItem('cms_token');
-        const headers = {
-          'Content-Type': 'application/json',
-          authorization: `Bearer ${token}`,
-        };
         for (const id of ids) {
           const document = documents.find((item) => item.id === id);
           if (!document) continue;
-          const response = await fetch(`${CMS_API}/v1/admin/documents/${id}`, {
-            method: 'PATCH',
-            headers,
-            body: JSON.stringify({
-              title: document.title,
-              slug: document.slug,
-              data: document.data,
-              note: 'Edited in visual editor',
-            }),
-          });
-          const result = (await response.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          if (!response.ok)
-            throw new Error(
-              result.error ?? `Could not save ${document.title}.`,
-            );
+          await queueDocumentSave(document, 'Edited in visual editor');
         }
         setDirtyIds(
           (current) => new Set([...current].filter((id) => !ids.includes(id))),
@@ -1110,7 +1232,7 @@ export function VisualEditor() {
         return false;
       }
     },
-    [dirtyIds, documents],
+    [dirtyIds, documents, queueDocumentSave],
   );
 
   useEffect(() => {
@@ -1489,6 +1611,15 @@ export function VisualEditor() {
   };
 
   return (
+    <DndContext
+      sensors={builderSensors}
+      collisionDetection={builderCollisionDetection}
+      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+      autoScroll={{ enabled: true, acceleration: 12, threshold: { x: 0.12, y: 0.16 } }}
+      onDragStart={handleBuilderDragStart}
+      onDragCancel={clearBuilderDrag}
+      onDragEnd={handleBuilderDragEnd}
+    >
     <div className="visual-editor">
       <header className="visual-toolbar">
         <a className="admin-btn admin-btn-ghost" href={adminPath('/admin')}>
@@ -1845,15 +1976,13 @@ export function VisualEditor() {
             </div>
             <div className="visual-builder-elements">
               {BUILDER_LIBRARY_GROUPS.map((group) => <details key={group.label} open={group.label === 'Layout' || group.label === 'Content'}><summary>{group.label}</summary><div>{group.items.map(({ type, label, Icon }) => (
-                  <button
+                  <BlockLibraryItem
                     key={type}
-                    type="button"
-                    draggable
+                    type={type}
+                    label={label}
+                    Icon={Icon}
                     onClick={() => void addBuilderElement(type)}
-                    onDragStart={(event) => { event.dataTransfer.setData('application/x-infostorage-builder-new', type); event.dataTransfer.effectAllowed = 'copy'; }}
-                  >
-                    <Icon size={14} /> {label}
-                  </button>
+                  />
                 ))}</div></details>)}
             </div>
             <div className="visual-template-library">
@@ -1863,14 +1992,7 @@ export function VisualEditor() {
           </div>
         </aside>
 
-        <main
-          className={`visual-canvas-area visual-canvas-area-${device}`}
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            const type = event.dataTransfer.getData('application/x-infostorage-builder-new');
-            if (type && BUILDER_NODE_TYPES.includes(type as BuilderNodeType)) void addBuilderElement(type as BuilderNodeType);
-          }}
-        >
+        <main className={`visual-canvas-area visual-canvas-area-${device}`}>
           {!hasPageBindings && (
             <div className="visual-initialize-banner" role="status">
               <div>
@@ -1894,9 +2016,8 @@ export function VisualEditor() {
             {isCustomPage ? (
               <CustomPageLayout title={activePageTitle} page={builderPage} chrome={previewChrome}
                 style={designVariables(designSystemFromDoc(globalSettings?.data.design))}
-                previewCss editable selectedNodeId={selectedBuilderNodeId}
+                previewCss editable dragActive={Boolean(activeBuilderDrag)} activeDragType={activeBuilderDrag && activeBuilderDrag.kind !== 'insert' ? activeBuilderDrag.blockType : undefined} selectedNodeId={selectedBuilderNodeId}
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
-                onDropNode={moveBuilderBlock} onDragStartNode={setDraggedBuilderNodeId}
                 onSelectNavigationItem={selectNavigationItem}
                 onUpdateNavigationItem={updateNavigationItem}
                 onUpdateNodeProp={(nodeId, key, value) => changeBuilderNode(nodeId, (node) => ({ ...node, props: { ...node.props, [key]: value } }))} />
@@ -1908,10 +2029,10 @@ export function VisualEditor() {
                 style={designVariables(designSystemFromDoc(globalSettings?.data.design))}
                 previewCss
                 editable
+                dragActive={Boolean(activeBuilderDrag)}
+                activeDragType={activeBuilderDrag && activeBuilderDrag.kind !== 'insert' ? activeBuilderDrag.blockType : undefined}
                 selectedNodeId={selectedBuilderNodeId}
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
-                onDropNode={moveBuilderBlock}
-                onDragStartNode={setDraggedBuilderNodeId}
                 onSelectNavigationItem={selectNavigationItem}
                 onUpdateNavigationItem={updateNavigationItem}
                 onUpdateNodeProp={(nodeId, key, value) => changeBuilderNode(nodeId, (node) => ({ ...node, props: { ...node.props, [key]: value } }))}
@@ -2386,6 +2507,15 @@ export function VisualEditor() {
         </aside>
       </div>
     </div>
+    <DragOverlay dropAnimation={{ duration: 160, easing: 'ease-out' }}>
+      {activeBuilderDrag && activeBuilderDrag.kind !== 'insert' ? (
+        <BuilderDragOverlay
+          label={activeBuilderDrag.kind === 'node' ? activeBuilderDrag.label : activeBuilderDrag.label}
+          isNew={activeBuilderDrag.kind === 'library'}
+        />
+      ) : null}
+    </DragOverlay>
+    </DndContext>
   );
 }
 

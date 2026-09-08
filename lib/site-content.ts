@@ -1,5 +1,5 @@
 import { CMS_API } from './cms-api';
-import { hasBuilderContent, normaliseBuilderPage, type BuilderNode, type BuilderNodeType, type BuilderPage } from './page-builder';
+import { hasBuilderContent, normaliseBuilderPage, reindexBuilderPage, type BuilderNode, type BuilderNodeType, type BuilderPage } from './page-builder';
 
 // Content layer for the public site.
 //
@@ -507,13 +507,13 @@ const migratedBlockResponsive: BuilderNode['responsive'] = {
 };
 
 function migratedBlock(id: string, type: BuilderNodeType, props: BuilderNode['props']): BuilderNode {
-  return { id, type, props, styles: { ...migratedBlockStyles }, responsive: { ...migratedBlockResponsive }, children: [] };
+  return { id, sortIndex: 0, type, props, styles: { ...migratedBlockStyles }, responsive: { ...migratedBlockResponsive }, children: [] };
 }
 
 /** The CMS migration blueprint for the original homepage. It deliberately uses
  * the same visual component blocks as every new CMS page, not legacy JSX. */
 export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): BuilderPage {
-  return {
+  return reindexBuilderPage({
     version: 1,
     customCss: '',
     settings: { seoTitle: 'INFOStorage | Enterprise technology, thoughtfully connected', seoDescription: DEFAULT_HOME.hero.description, socialImage: '', hideDefaultHeader: false, hideDefaultFooter: false },
@@ -540,12 +540,12 @@ export function createHomeBuilderPage(content: HomeContent = DEFAULT_HOME): Buil
       beforeContact: [migratedBlock('home-sectors', 'tag_band', { kicker: content.sectors.kicker, heading: content.sectors.heading, tags: content.sectors.tags.join('\n') })],
       afterContent: [migratedBlock('home-contact', 'contact_panel', { eyebrow: content.contact.eyebrow, heading: content.contact.heading, body: content.contact.body }), migratedBlock('home-footer', 'site_footer', { useGlobal: true })],
     },
-  };
+  });
 }
 
 /** The CMS migration blueprint for the original Partners page. */
 export function createPartnersBuilderPage(content: PartnersContent = DEFAULT_PARTNERS): BuilderPage {
-  return {
+  return reindexBuilderPage({
     version: 1,
     customCss: '',
     settings: { seoTitle: 'Partners | INFOStorage', seoDescription: DEFAULT_PARTNERS.hero.description, socialImage: '', hideDefaultHeader: false, hideDefaultFooter: false },
@@ -572,7 +572,7 @@ export function createPartnersBuilderPage(content: PartnersContent = DEFAULT_PAR
         body: 'Bring us the challenge. We will help you turn it into an integrated, practical next step.', ctaLabel: 'Start a conversation', ctaHref: '/#contact',
       }), migratedBlock('partners-footer', 'site_footer', { useGlobal: true })],
     },
-  };
+  });
 }
 
 function navFromDoc(data: Record<string, unknown> | null): NavItem[] | null {

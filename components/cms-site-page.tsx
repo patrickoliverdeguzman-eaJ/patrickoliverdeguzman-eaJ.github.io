@@ -6,10 +6,10 @@ import { type BuilderPage, BUILDER_SLOTS, hasBuilderNodeType, normalisePageCss }
 
 type BuilderInteractions = {
   editable?: boolean;
+  dragActive?: boolean;
+  activeDragType?: import('@/lib/page-builder').BuilderNodeType;
   selectedNodeId?: string | null;
   onSelectNode?: (nodeId: string) => void;
-  onDropNode?: (targetNodeId: string, mode?: 'before' | 'inside') => void;
-  onDragStartNode?: (nodeId: string) => void;
   onUpdateNodeProp?: (nodeId: string, key: string, value: string) => void;
   onSelectNavigationItem?: (itemId: string) => void;
   onUpdateNavigationItem?: (itemId: string, label: string) => void;
