@@ -147,6 +147,9 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   grid-template-columns: minmax(0, 1.1fr) minmax(240px, 0.4fr);
   gap: 4rem;
   align-items: end;
+  /* The header is positioned over the hero. Keep CMS-controlled hero content
+     below its 92px desktop footprint even when block padding is reduced. */
+  padding-top: 7rem;
   padding-bottom: clamp(3rem, 8vh, 7.1rem);
 }
 
@@ -599,7 +602,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
   .mobile-menu-panel { position: absolute; z-index: 5; right: 0; top: 48px; display: grid; width: 200px; padding: 0.6rem; border: 1px solid rgba(255, 255, 255, 0.23); background: rgba(40, 8, 23, 0.96); box-shadow: 0 1rem 2rem rgba(0, 0, 0, 0.18); }
   .mobile-menu-panel a { padding: 0.75rem; color: rgba(255, 255, 255, 0.8); font-size: 0.82rem; }
   .mobile-menu-panel a:hover { background: rgba(255, 255, 255, 0.08); color: var(--electric); }
-  .hero-inner { grid-template-columns: 1fr; padding-bottom: 2.5rem; }
+  .hero-inner { grid-template-columns: 1fr; padding-top: 6rem; padding-bottom: 2.5rem; }
   .hero-status, .hero-brand-stage { display: none; }
   .intro-grid, .solutions-heading, .services-section, .sectors { grid-template-columns: 1fr; gap: 2rem; }
   .solutions-heading > p { max-width: 550px; }

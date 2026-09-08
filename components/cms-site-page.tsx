@@ -11,6 +11,8 @@ type BuilderInteractions = {
   onDropNode?: (targetNodeId: string, mode?: 'before' | 'inside') => void;
   onDragStartNode?: (nodeId: string) => void;
   onUpdateNodeProp?: (nodeId: string, key: string, value: string) => void;
+  onSelectNavigationItem?: (itemId: string) => void;
+  onUpdateNavigationItem?: (itemId: string, label: string) => void;
 };
 
 type CmsSitePageProps = BuilderInteractions & {

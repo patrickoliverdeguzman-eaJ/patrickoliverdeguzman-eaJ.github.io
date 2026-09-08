@@ -1110,6 +1110,17 @@
 .visual-header-link input:not([type='checkbox']) { width: 100%; padding: 0.46rem 0.52rem; border: 1px solid rgba(130, 0, 64, 0.2); border-radius: 0.35rem; background: white; color: #2a0d1c; font: inherit; font-size: 0.72rem; }
 .visual-header-link label { display: flex; align-items: center; gap: 0.35rem; color: #735568; font-size: 0.69rem; }
 .visual-header-link button { justify-self: start; padding: 0.3rem 0.42rem; font-size: 0.66rem; }
+.visual-canvas .nav-inline-edit {
+  min-width: 1.5rem;
+  border-radius: 0.2rem;
+  outline: 1px dashed rgba(255, 212, 228, 0.68);
+  outline-offset: 0.22rem;
+  cursor: text;
+}
+.visual-canvas .nav-inline-edit:focus {
+  outline: 2px solid #ffd4e4;
+  outline-offset: 0.24rem;
+}
 .visual-header-preview { cursor: pointer; outline: 1px dashed transparent; outline-offset: -2px; }
 .visual-header-preview:hover { outline-color: rgba(230, 74, 145, 0.7); }
 .visual-public-preview .hero,

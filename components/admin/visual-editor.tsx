@@ -702,6 +702,27 @@ export function VisualEditor() {
     markChanged(next, [documentId]);
   };
 
+  const selectNavigationItem = (itemId?: string) => {
+    if (!navigation) {
+      setStatus('error');
+      setMessage('The shared navigation document is missing.');
+      return;
+    }
+    setSelectedBuilderNodeId(null);
+    setSelected({ documentId: navigation.id, key: 'items' });
+    const item = headerLinks(navigation.data.items).find((link) => link.id === itemId);
+    setMessage(item ? `Editing the “${item.label}” menu item` : 'Editing the shared header menu');
+  };
+
+  const updateNavigationItem = (itemId: string, label: string) => {
+    if (!navigation) return;
+    const links = headerLinks(navigation.data.items);
+    updateHeaderLinks(
+      navigation.id,
+      links.map((item) => item.id === itemId ? { ...item, label } : item),
+    );
+  };
+
   const updateBuilder = (nextPage: ReturnType<typeof emptyBuilderPage>) => {
     if (!builderDocument) return;
     const next = documents.map((document) =>
@@ -1876,6 +1897,8 @@ export function VisualEditor() {
                 previewCss editable selectedNodeId={selectedBuilderNodeId}
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
                 onDropNode={moveBuilderBlock} onDragStartNode={setDraggedBuilderNodeId}
+                onSelectNavigationItem={selectNavigationItem}
+                onUpdateNavigationItem={updateNavigationItem}
                 onUpdateNodeProp={(nodeId, key, value) => changeBuilderNode(nodeId, (node) => ({ ...node, props: { ...node.props, [key]: value } }))} />
             ) : (
               <CmsSitePage
@@ -1889,6 +1912,8 @@ export function VisualEditor() {
                 onSelectNode={(nodeId) => { setSelectedBuilderNodeId(nodeId); setSelected(null); }}
                 onDropNode={moveBuilderBlock}
                 onDragStartNode={setDraggedBuilderNodeId}
+                onSelectNavigationItem={selectNavigationItem}
+                onUpdateNavigationItem={updateNavigationItem}
                 onUpdateNodeProp={(nodeId, key, value) => changeBuilderNode(nodeId, (node) => ({ ...node, props: { ...node.props, [key]: value } }))}
               />
             )}
@@ -1912,6 +1937,15 @@ export function VisualEditor() {
                 <strong>{selectedBuilderNode.type}</strong>
                 <small>Edit content and layout here, or use Element CSS to style any part of this block.</small>
               </div>
+              {selectedBuilderNode.type === 'site_header' && selectedBuilderNode.props.useGlobal !== false && (
+                <section className="visual-section-actions">
+                  <h3>Shared menu</h3>
+                  <p>Solutions, Services, Why INFOStorage, Partners, and Contact come from the global navigation. Edit their labels, destinations, order, visibility, and dropdown parents here.</p>
+                  <button type="button" onClick={() => selectNavigationItem()}>
+                    Edit menu links
+                  </button>
+                </section>
+              )}
               {['section', 'container', 'row', 'column', 'grid', 'card'].includes(selectedBuilderNode.type) && (
                 <label className="visual-field">
                   <span>Editor label</span>

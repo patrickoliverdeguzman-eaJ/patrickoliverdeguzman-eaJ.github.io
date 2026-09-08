@@ -22,6 +22,8 @@ type PageBuilderRendererProps = {
   onDropNode?: (targetNodeId: string, mode?: 'before' | 'inside') => void;
   onDragStartNode?: (nodeId: string) => void;
   onUpdateNodeProp?: (nodeId: string, key: string, value: string) => void;
+  onSelectNavigationItem?: (itemId: string) => void;
+  onUpdateNavigationItem?: (itemId: string, label: string) => void;
 };
 
 function prop(node: BuilderNode, name: string, fallback = ''): string {
@@ -159,7 +161,7 @@ function siteHref(href: string, chrome?: SiteChrome): string {
   return safe;
 }
 
-export function SiteHeader({ chrome, node, editable, onUpdateNodeProp }: { chrome: SiteChrome; node?: BuilderNode; editable?: boolean; onUpdateNodeProp?: PageBuilderRendererProps['onUpdateNodeProp'] }) {
+export function SiteHeader({ chrome, node, editable, onUpdateNodeProp, onSelectNavigationItem, onUpdateNavigationItem }: { chrome: SiteChrome; node?: BuilderNode; editable?: boolean; onUpdateNodeProp?: PageBuilderRendererProps['onUpdateNodeProp']; onSelectNavigationItem?: PageBuilderRendererProps['onSelectNavigationItem']; onUpdateNavigationItem?: PageBuilderRendererProps['onUpdateNavigationItem'] }) {
   const isPartners = chrome.variant === 'partners';
   const useGlobal = !node || booleanProp(node, 'useGlobal', true);
   const customLinks: SiteChrome['navItems'] = node ? records(prop(node, 'links'), 2).map(([label, href], index) => ({ id: `${node.id}-link-${index}`, label, href, enabled: true })) : [];
@@ -174,6 +176,27 @@ export function SiteHeader({ chrome, node, editable, onUpdateNodeProp }: { chrom
   const logoStyle = { '--cms-logo-width': styleValue(logoWidth), '--cms-mobile-logo-width': styleValue(mobileLogoWidth), margin: styleValue(logoSpacing) } as CSSProperties;
   const ctaLabel = useGlobal ? chrome.headerCta.label : prop(node!, 'ctaLabel', chrome.headerCta.label);
   const ctaHref = useGlobal ? chrome.headerCta.href : prop(node!, 'ctaHref', chrome.headerCta.href);
+  const navigationLabel = (item: SiteChrome['navItems'][number]) => editable && useGlobal ? (
+    <span
+      className="nav-inline-edit"
+      contentEditable
+      suppressContentEditableWarning
+      spellCheck={false}
+      data-cms-navigation-item={item.id}
+      title="Click to edit this menu label"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelectNavigationItem?.(item.id);
+      }}
+      onBlur={(event) => {
+        const label = event.currentTarget.textContent?.trim() || item.label;
+        onUpdateNavigationItem?.(item.id, label);
+      }}
+    >
+      {item.label}
+    </span>
+  ) : item.label;
   return (
     <nav className="nav-wrap" data-cms-chrome="header" aria-label="Main navigation">
       <a href={isPartners ? '/' : '#top'} className={`brand brand-image brand-align-${['left', 'center', 'right'].includes(logoAlignment) ? logoAlignment : 'left'}`} aria-label="INFOStorage home" style={logoStyle}>
@@ -184,11 +207,11 @@ export function SiteHeader({ chrome, node, editable, onUpdateNodeProp }: { chrom
       <div className="desktop-links">
         {rootItems.map((item) => {
           const children = navItems.filter((child) => child.enabled !== false && child.parentId === item.id);
-          return children.length ? <details className="nav-dropdown" key={item.id}><summary data-cms-item={item.id}>{item.label}<ChevronRight size={13} /></summary><div>{children.map((child) => <a data-cms-item={child.id} href={siteHref(child.href, chrome)} key={child.id}>{child.label}</a>)}</div></details> : <a data-cms-item={item.id} className={isPartners && item.href === '/partners' ? 'nav-active' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{item.label}</a>;
+          return children.length ? <details className="nav-dropdown" key={item.id}><summary data-cms-item={item.id}>{navigationLabel(item)}<ChevronRight size={13} /></summary><div>{children.map((child) => <a data-cms-item={child.id} href={siteHref(child.href, chrome)} key={child.id}>{navigationLabel(child)}</a>)}</div></details> : <a data-cms-item={item.id} className={isPartners && item.href === '/partners' ? 'nav-active' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{navigationLabel(item)}</a>;
         })}
       </div>
       <a className="nav-cta" href={siteHref(ctaHref, chrome)}>{node ? <EditableValue node={node} field="ctaLabel" fallback={ctaLabel} editable={editable && !useGlobal} onUpdateNodeProp={onUpdateNodeProp} /> : ctaLabel} <ArrowUpRight size={16} strokeWidth={2.1} /></a>
-      <details className="mobile-menu"><summary aria-label="Open navigation"><Menu size={22} /></summary><div className="mobile-menu-panel">{navItems.filter((item) => item.enabled !== false).map((item) => <a className={item.parentId ? 'mobile-menu-child' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{item.label}</a>)}</div></details>
+      <details className="mobile-menu"><summary aria-label="Open navigation"><Menu size={22} /></summary><div className="mobile-menu-panel">{navItems.filter((item) => item.enabled !== false).map((item) => <a className={item.parentId ? 'mobile-menu-child' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{navigationLabel(item)}</a>)}</div></details>
     </nav>
   );
 }
@@ -209,7 +232,7 @@ function nodeClasses(node: BuilderNode, editable?: boolean, selectedNodeId?: str
   ].filter(Boolean).join(' ');
 }
 
-function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropNode, onDragStartNode, onUpdateNodeProp, chrome, explicitHeader }: Omit<PageBuilderRendererProps, 'page' | 'slot'> & { node: BuilderNode; explicitHeader?: boolean }) {
+function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropNode, onDragStartNode, onUpdateNodeProp, onSelectNavigationItem, onUpdateNavigationItem, chrome, explicitHeader }: Omit<PageBuilderRendererProps, 'page' | 'slot'> & { node: BuilderNode; explicitHeader?: boolean }) {
   const className = nodeClasses(node, editable, selectedNodeId);
   const interactions: React.HTMLAttributes<HTMLElement> & { 'data-cms-node': string } = { 'data-cms-node': node.id, ...(node.styles.elementId ? { id: node.styles.elementId } : {}), style: advancedInlineStyle(node.styles.advanced), ...(editable ? {
     draggable: true,
@@ -218,9 +241,9 @@ function BuilderNodeView({ node, editable, selectedNodeId, onSelectNode, onDropN
     onDragOver: (event: React.DragEvent<HTMLElement>) => event.preventDefault(),
     onDrop: (event: React.DragEvent<HTMLElement>) => { event.preventDefault(); event.stopPropagation(); onDropNode?.(node.id, ['section', 'container', 'row', 'columns', 'column', 'grid', 'card', 'form', 'site_header', 'site_footer'].includes(node.type) ? 'inside' : 'before'); },
   } : {}) };
-  const children = node.children.map((child) => <BuilderNodeView key={child.id} node={child} editable={editable} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onDropNode={onDropNode} onDragStartNode={onDragStartNode} onUpdateNodeProp={onUpdateNodeProp} chrome={chrome} explicitHeader={explicitHeader} />);
+  const children = node.children.map((child) => <BuilderNodeView key={child.id} node={child} editable={editable} selectedNodeId={selectedNodeId} onSelectNode={onSelectNode} onDropNode={onDropNode} onDragStartNode={onDragStartNode} onUpdateNodeProp={onUpdateNodeProp} onSelectNavigationItem={onSelectNavigationItem} onUpdateNavigationItem={onUpdateNavigationItem} chrome={chrome} explicitHeader={explicitHeader} />);
 
-  if (node.type === 'site_header') return <header className={className} {...interactions}>{chrome && <SiteHeader chrome={chrome} node={node} editable={editable} onUpdateNodeProp={onUpdateNodeProp} />}{children}</header>;
+  if (node.type === 'site_header') return <header className={className} {...interactions}>{chrome && <SiteHeader chrome={chrome} node={node} editable={editable} onUpdateNodeProp={onUpdateNodeProp} onSelectNavigationItem={onSelectNavigationItem} onUpdateNavigationItem={onUpdateNavigationItem} />}{children}</header>;
   if (node.type === 'site_footer') {
     const useGlobal = booleanProp(node, 'useGlobal', true);
     const logo = useGlobal ? (chrome?.site.logoLight || chrome?.site.logo) : (safeImage(prop(node, 'logo')) ?? chrome?.site.logo);
