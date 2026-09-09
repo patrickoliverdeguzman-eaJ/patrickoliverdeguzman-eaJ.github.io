@@ -5,6 +5,7 @@ import { CMS_API } from '@/lib/cms-api';
 import { AdminSidebar } from './sidebar';
 import { AdminHeader } from './header';
 import { adminPath } from '@/lib/site-paths';
+import { clearCmsToken, getCmsToken } from '@/lib/admin-session';
 
 interface AuthUser {
   id: string;
@@ -16,7 +17,7 @@ interface AuthUser {
 type ShellState =
   | { status: 'checking' }
   | { status: 'login' }
-  | { status: 'app' };
+  | { status: 'app'; user: AuthUser };
 
 function isLoginPath(pathname: string): boolean {
   return pathname === adminPath('/admin/login') || pathname === '/admin/login/';
@@ -39,16 +40,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     try {
       const path = window.location.pathname;
       const loginPage = isLoginPath(path);
-      let token: string | null = null;
-      try {
-        token = localStorage.getItem('cms_token');
-        if (!token) {
-          token = sessionStorage.getItem('infostorage.cms.session-token');
-          if (token) localStorage.setItem('cms_token', token);
-        }
-      } catch {
-        token = null;
-      }
+      const token = getCmsToken();
 
       if (!token) {
         if (loginPage) {
@@ -60,22 +52,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       }
 
       fetchMe(token)
-        .then(() => {
+        .then((user) => {
           if (cancelled) return;
           if (loginPage) {
             window.location.href = adminPath('/admin');
           } else {
-            setState({ status: 'app' });
+            setState({ status: 'app', user });
           }
         })
         .catch(() => {
           // Drop dead tokens (e.g. issued by a different worker database)
           // so the user lands cleanly on the login form instead of bouncing.
-          try {
-            localStorage.removeItem('cms_token');
-          } catch {
-            // storage unavailable; continue to login form anyway
-          }
+          clearCmsToken();
           if (cancelled) return;
           if (loginPage) {
             setState({ status: 'login' });
@@ -117,9 +105,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="admin-shell">
-      <AdminSidebar />
+      <AdminSidebar role={state.user.role} />
       <div className="admin-main">
-        <AdminHeader />
+        <AdminHeader user={state.user} />
         <main className="admin-content">{children}</main>
       </div>
     </div>

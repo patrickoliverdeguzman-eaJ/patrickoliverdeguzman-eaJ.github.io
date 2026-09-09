@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { adminPath } from '@/lib/site-paths';
+import { getCmsToken } from '@/lib/admin-session';
 
 interface Stats {
   totalDocuments: number;
@@ -53,7 +54,7 @@ export function AdminDashboard() {
   const [importError, setImportError] = useState('');
 
   useEffect(() => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const headers = { authorization: `Bearer ${token}` };
     Promise.all([
       fetch(`${CMS_API}/v1/admin/documents?limit=100&status=published`, {
@@ -96,7 +97,7 @@ export function AdminDashboard() {
     setImporting(true);
     setImportError('');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const headers = {
         'Content-Type': 'application/json',
         authorization: `Bearer ${token}`,

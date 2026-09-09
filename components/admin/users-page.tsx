@@ -1,6 +1,7 @@
 'use client';
 
 import { CMS_API } from '@/lib/cms-api';
+import { getCmsToken } from '@/lib/admin-session';
 
 import { useEffect, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
@@ -29,7 +30,7 @@ export function UsersPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     fetch(`${CMS_API}/v1/admin/users`, { headers: { authorization: `Bearer ${token}` } })
       .then((res) => res.json() as Promise<UsersResponse>)
       .then((data) => setUsers(data.users ?? []))
@@ -42,7 +43,7 @@ export function UsersPage() {
     setError('');
     setSaving(true);
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const res = await fetch(`${CMS_API}/v1/admin/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -66,7 +67,7 @@ export function UsersPage() {
   const deleteUser = async (id: string) => {
     if (!window.confirm('Delete this user?')) return;
     setError('');
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const res = await fetch(`${CMS_API}/v1/admin/users/${id}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` },

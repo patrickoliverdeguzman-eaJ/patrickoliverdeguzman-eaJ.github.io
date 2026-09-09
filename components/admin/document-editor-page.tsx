@@ -1,6 +1,7 @@
 'use client';
 
 import { CMS_API } from '@/lib/cms-api';
+import { getCmsToken } from '@/lib/admin-session';
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -79,7 +80,7 @@ export function DocumentEditorPage() {
       setLoading(false);
       return;
     }
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     fetch(`${CMS_API}/v1/admin/documents/${documentId}`, { headers: { authorization: `Bearer ${token}` } })
       .then((res) => res.json().then((raw: unknown) => raw as DocResponse))
       .then((data: DocResponse) => {
@@ -92,7 +93,7 @@ export function DocumentEditorPage() {
   }, [documentId]);
 
   useEffect(() => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     fetch(`${CMS_API}/v1/admin/media`, { headers: { authorization: `Bearer ${token}` } })
       .then((response) => response.ok ? response.json() as Promise<MediaResponse> : { media: [] })
       .then((data) => setMedia(data.media ?? []))
@@ -144,7 +145,7 @@ export function DocumentEditorPage() {
 
   const persistDocument = async (): Promise<DocumentData> => {
     if (!doc) throw new Error('No document is loaded.');
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${documentId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -174,13 +175,15 @@ export function DocumentEditorPage() {
     setError('');
     try {
       const saved = await persistDocument();
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents/${documentId}/publish`, {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
       });
-      const result = (await response.json().catch(() => ({}))) as { document?: DocumentData; error?: string };
-      if (!response.ok || !result.document) throw new Error(result.error ?? 'The document could not be published.');
+      const result = (await response.json().catch(() => ({}))) as { document?: DocumentData; error?: string; issues?: string[] };
+      if (!response.ok || !result.document) {
+        throw new Error([result.error ?? 'The document could not be published.', ...(result.issues ?? [])].join(' '));
+      }
       setDoc({ ...normalizeDocument(result.document), publishedData: { ...saved.data, blocks: saved.data.blocks ?? [] } });
       setPreview('published');
     } catch (caught) {
@@ -191,7 +194,7 @@ export function DocumentEditorPage() {
   };
 
   const unpublishDocument = async () => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     await fetch(`${CMS_API}/v1/admin/documents/${documentId}/unpublish`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
     setDoc({ ...doc!, status: 'draft', publishedData: null });
     setPreview('draft');
@@ -199,7 +202,7 @@ export function DocumentEditorPage() {
 
   const archiveDocument = async () => {
     if (!window.confirm('Archive this document? It will be hidden from the site.')) return;
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     await fetch(`${CMS_API}/v1/admin/documents/${documentId}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
     window.location.href = adminPath('/admin/documents');
   };
@@ -208,7 +211,7 @@ export function DocumentEditorPage() {
     setSaving(true);
     setError('');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents/${documentId}/restore-archived`, {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },

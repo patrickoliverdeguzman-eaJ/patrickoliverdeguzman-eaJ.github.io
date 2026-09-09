@@ -1,6 +1,7 @@
 'use client';
 
 import { CMS_API } from '@/lib/cms-api';
+import { getCmsToken } from '@/lib/admin-session';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Upload, Trash2, Image as ImageIcon, FileText, Video, File, Search } from 'lucide-react';
@@ -40,7 +41,7 @@ export function MediaLibraryPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMedia = useCallback(async () => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     try {
       const res = await fetch(`${CMS_API}/v1/admin/media`, { headers: { authorization: `Bearer ${token}` } });
       const data: MediaResponse = await res.json();
@@ -69,7 +70,7 @@ export function MediaLibraryPage() {
   const handleDragLeave = () => setDragOver(false);
 
   const uploadFiles = async (files: File[]) => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     setUploading(true);
     for (const file of files) {
       try {
@@ -111,7 +112,7 @@ export function MediaLibraryPage() {
   const deleteMedia = async (id: string) => {
     const item = media.find((entry) => entry.id === id);
     if (!item || !window.confirm(`Delete “${item.filename}”? Existing pages using its URL may show a broken image.`)) return;
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/media/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
     if (!response.ok) {
       setNotice('The media file could not be deleted.');
@@ -126,7 +127,7 @@ export function MediaLibraryPage() {
   };
 
   const saveMetadata = async (item: MediaItem) => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/media/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },

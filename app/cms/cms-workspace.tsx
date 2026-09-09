@@ -30,6 +30,7 @@ import {
   useState,
 } from 'react';
 import styles from './cms-workspace.module.css';
+import { clearCmsToken, getCmsToken, setCmsToken } from '@/lib/admin-session';
 
 type Role = 'admin' | 'editor' | 'viewer';
 type Status = 'draft' | 'published' | 'archived';
@@ -118,7 +119,6 @@ const endpointFromBuild =
   process.env.NEXT_PUBLIC_CMS_API_URL ??
   'https://infostorage-cms.patrickoliverdeguzman.workers.dev';
 const endpointStorageKey = 'infostorage.cms.endpoint';
-const tokenStorageKey = 'infostorage.cms.session-token';
 const visualEditorHref =
   process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true'
     ? '/admin/visual-editor.html'
@@ -351,7 +351,7 @@ export default function CmsWorkspace() {
 
   useEffect(() => {
     const savedEndpoint = sessionStorage.getItem(endpointStorageKey);
-    const savedToken = sessionStorage.getItem(tokenStorageKey);
+    const savedToken = getCmsToken();
     if (!savedEndpoint && !savedToken) return;
     window.setTimeout(() => {
       if (savedEndpoint) setEndpoint(savedEndpoint);
@@ -367,7 +367,7 @@ export default function CmsWorkspace() {
         setUser(data.user);
         await loadDocuments();
       } catch {
-        sessionStorage.removeItem(tokenStorageKey);
+        clearCmsToken();
         setToken('');
         setUser(null);
       }
@@ -631,8 +631,7 @@ export default function CmsWorkspace() {
     } catch {
       // The local session should still be removed when the network is unavailable.
     }
-    sessionStorage.removeItem(tokenStorageKey);
-    localStorage.removeItem('cms_token');
+    clearCmsToken();
     setToken('');
     setUser(null);
     setSelectedDocument(null);
@@ -731,8 +730,7 @@ export default function CmsWorkspace() {
             <BootstrapForm
               api={api}
               onAuthenticated={(result) => {
-                sessionStorage.setItem(tokenStorageKey, result.token);
-                localStorage.setItem('cms_token', result.token);
+                setCmsToken(result.token);
                 setToken(result.token);
                 setUser(result.user);
                 setNotice({
@@ -747,8 +745,7 @@ export default function CmsWorkspace() {
             <LoginForm
               api={api}
               onAuthenticated={(result) => {
-                sessionStorage.setItem(tokenStorageKey, result.token);
-                localStorage.setItem('cms_token', result.token);
+                setCmsToken(result.token);
                 setToken(result.token);
                 setUser(result.user);
                 setNotice(null);

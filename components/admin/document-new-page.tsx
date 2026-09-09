@@ -4,6 +4,7 @@ import { CMS_API } from '@/lib/cms-api';
 
 import { useState } from 'react';
 import { adminPath } from '@/lib/site-paths';
+import { getCmsToken } from '@/lib/admin-session';
 
 const contentTypes = [
   { value: 'page', label: 'Page', hint: 'Generic page with content blocks.' },
@@ -44,7 +45,7 @@ export function DocumentNewPage() {
     setError('');
     setSaving(true);
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const finalSlug = slugify(slug || title);
       if (!finalSlug) throw new Error('Enter a title so a slug can be generated.');
       const res = await fetch(`${CMS_API}/v1/admin/documents`, {

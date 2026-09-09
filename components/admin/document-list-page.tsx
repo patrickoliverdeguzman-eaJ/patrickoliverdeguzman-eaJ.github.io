@@ -1,6 +1,7 @@
 'use client';
 
 import { CMS_API } from '@/lib/cms-api';
+import { getCmsToken } from '@/lib/admin-session';
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
@@ -42,7 +43,7 @@ export function DocumentListPage() {
   const [statusFilter, setStatusFilter] = useState('');
 
   const fetchDocuments = useCallback(async () => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const params = new URLSearchParams();
     if (typeFilter) params.set('type', typeFilter);
     if (statusFilter) params.set('status', statusFilter);
@@ -67,7 +68,7 @@ export function DocumentListPage() {
     const newIndex = documents.findIndex((d) => d.id === over.id);
     const reordered = arrayMove(documents, oldIndex, newIndex);
     setDocuments(reordered);
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     await fetch(`${CMS_API}/v1/admin/documents/reorder`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },

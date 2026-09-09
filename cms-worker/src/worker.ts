@@ -66,6 +66,7 @@ type ChatConversationRow = {
   created_at: string;
   updated_at: string;
   last_message_at: string;
+  admin_read_at: string | null;
 };
 
 type ChatMessageRow = {
@@ -82,7 +83,12 @@ const MAX_PAGE_CSS_CHARS = 80_000;
 const MAX_MEDIA_BYTES = 10 * 1024 * 1024;
 const MAX_CHAT_MESSAGE_CHARS = 2_000;
 const MAX_CHAT_CONVERSATIONS = 100;
-const SESSION_DAYS = 12;
+const SESSION_DAYS = 1;
+const LOGIN_RATE_LIMIT = 5;
+const LOGIN_RATE_WINDOW_SECONDS = 5 * 60;
+const CHAT_CREATE_RATE_LIMIT = 12;
+const CHAT_MESSAGE_RATE_LIMIT = 60;
+const CHAT_RATE_WINDOW_SECONDS = 10 * 60;
 // Cloudflare Workers currently supports at most 100,000 PBKDF2 iterations.
 const PASSWORD_ITERATIONS = 100_000;
 const ALLOWED_MEDIA_EXTENSIONS: Record<string, readonly string[]> = {
@@ -188,6 +194,7 @@ class HttpError extends Error {
     readonly status: number,
     message: string,
     readonly code = 'request_error',
+    readonly issues?: readonly string[],
   ) {
     super(message);
   }
@@ -479,7 +486,7 @@ function withCors(response: Response, request: Request, env: CmsEnv): Response {
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', origin);
   headers.set('access-control-allow-methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  headers.set('access-control-allow-headers', 'Authorization, Content-Type, X-File-Name, X-Alt-Text, X-Visitor-Token');
+  headers.set('access-control-allow-headers', 'Authorization, Content-Type, X-File-Name, X-Alt-Text, X-Title, X-Caption, X-Visitor-Token');
   headers.set('access-control-max-age', '600');
   headers.append('vary', 'Origin');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
@@ -618,35 +625,40 @@ async function listAudit(request: Request, env: CmsEnv): Promise<Response> {
   });
 }
 
-// Best-effort per-isolate throttle for sign-in attempts. Workers isolates do
-// not share memory, so harden production further with a KV or D1 counter.
-const loginFailures = new Map<string, number[]>();
-
-function loginThrottleKey(request: Request, email: string): string {
+function requestClientKey(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-  const ip = request.headers.get('cf-connecting-ip') ?? (forwarded || 'unknown');
-  return `${ip}:${email}`;
+  return request.headers.get('cf-connecting-ip') ?? (forwarded || 'unknown');
 }
 
-function checkLoginThrottle(request: Request, email: string): void {
-  const key = loginThrottleKey(request, email);
-  const windowStart = Date.now() - 5 * 60 * 1000;
-  const attempts = (loginFailures.get(key) ?? []).filter((timestamp) => timestamp > windowStart);
-  loginFailures.set(key, attempts);
-  if (attempts.length >= 5) {
-    throw new HttpError(429, 'Too many sign-in attempts. Try again in a few minutes.', 'rate_limited');
+async function consumeRateLimit(
+  env: CmsEnv,
+  rawKey: string,
+  limit: number,
+  windowSeconds: number,
+  message: string,
+): Promise<string> {
+  const keyHash = await sha256Hex(rawKey);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const resetBefore = timestamp - windowSeconds;
+  const result = await env.CMS_DB.prepare(
+    `INSERT INTO cms_rate_limits (key_hash, window_started_at, attempt_count, updated_at)
+     VALUES (?, ?, 1, ?)
+     ON CONFLICT(key_hash) DO UPDATE SET
+       window_started_at = CASE WHEN window_started_at <= ? THEN excluded.window_started_at ELSE window_started_at END,
+       attempt_count = CASE WHEN window_started_at <= ? THEN 1 ELSE attempt_count + 1 END,
+       updated_at = excluded.updated_at
+     RETURNING attempt_count`,
+  )
+    .bind(keyHash, timestamp, now(), resetBefore, resetBefore)
+    .first<{ attempt_count: number }>();
+  if (Number(result?.attempt_count ?? limit + 1) > limit) {
+    throw new HttpError(429, message, 'rate_limited');
   }
+  return keyHash;
 }
 
-function recordLoginFailure(request: Request, email: string): void {
-  const key = loginThrottleKey(request, email);
-  const attempts = loginFailures.get(key) ?? [];
-  attempts.push(Date.now());
-  loginFailures.set(key, attempts.slice(-10));
-}
-
-function clearLoginFailures(request: Request, email: string): void {
-  loginFailures.delete(loginThrottleKey(request, email));
+async function clearRateLimit(env: CmsEnv, keyHash: string): Promise<void> {
+  await env.CMS_DB.prepare('DELETE FROM cms_rate_limits WHERE key_hash = ?').bind(keyHash).run();
 }
 
 function formatUser(user: CmsUser): JsonRecord {
@@ -709,6 +721,7 @@ function formatChatConversation(conversation: ChatConversationRow, includeContac
     createdAt: conversation.created_at,
     updatedAt: conversation.updated_at,
     lastMessageAt: conversation.last_message_at,
+    unread: conversation.last_sender_type === 'visitor' && (!conversation.admin_read_at || conversation.admin_read_at < conversation.last_message_at),
   };
   if (includeContact) result.visitorEmail = conversation.visitor_email;
   return result;
@@ -794,7 +807,13 @@ async function login(request: Request, env: CmsEnv): Promise<Response> {
   const body = await readJson(request);
   const email = validateEmail(body.email);
   const password = validatePassword(body.password);
-  checkLoginThrottle(request, email);
+  const rateLimitKey = await consumeRateLimit(
+    env,
+    `login:${requestClientKey(request)}:${email}`,
+    LOGIN_RATE_LIMIT,
+    LOGIN_RATE_WINDOW_SECONDS,
+    'Too many sign-in attempts. Try again in a few minutes.',
+  );
   const account = await env.CMS_DB.prepare(
     `SELECT id, email, display_name, role, password_salt, password_hash
      FROM cms_users WHERE email = ?`,
@@ -803,15 +822,74 @@ async function login(request: Request, env: CmsEnv): Promise<Response> {
     .first<CmsUser & { password_salt: string; password_hash: string }>();
 
   if (!account || !(await verifyPassword(password, account.password_salt, account.password_hash))) {
-    recordLoginFailure(request, email);
     throw new HttpError(401, 'Email or password is not correct.', 'invalid_credentials');
   }
 
   const user: CmsUser = account;
-  clearLoginFailures(request, email);
+  await clearRateLimit(env, rateLimitKey);
   const session = await createSession(user, env);
   await logAudit(env, { userId: user.id, action: 'login', resourceType: 'user', resourceId: user.id, detail: user.email });
   return json(session);
+}
+
+async function changePassword(request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const body = await readJson(request);
+  const currentPassword = validatePassword(body.currentPassword);
+  const newPassword = validatePassword(body.newPassword);
+  if (currentPassword === newPassword) {
+    throw new HttpError(400, 'Choose a new password that is different from the current password.', 'invalid_input');
+  }
+  const account = await env.CMS_DB.prepare(
+    'SELECT password_salt, password_hash FROM cms_users WHERE id = ?',
+  ).bind(user.id).first<{ password_salt: string; password_hash: string }>();
+  if (!account || !(await verifyPassword(currentPassword, account.password_salt, account.password_hash))) {
+    throw new HttpError(401, 'The current password is not correct.', 'invalid_credentials');
+  }
+  const passwordRecord = await createPasswordRecord(newPassword);
+  const updatedAt = now();
+  await env.CMS_DB.batch([
+    env.CMS_DB.prepare(
+      'UPDATE cms_users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?',
+    ).bind(passwordRecord.salt, passwordRecord.hash, updatedAt, user.id),
+    env.CMS_DB.prepare('DELETE FROM cms_sessions WHERE user_id = ?').bind(user.id),
+  ]);
+  const session = await createSession(user, env);
+  await logAudit(env, { userId: user.id, action: 'user.password.change', resourceType: 'user', resourceId: user.id });
+  return json(session);
+}
+
+async function recoverPassword(request: Request, env: CmsEnv): Promise<Response> {
+  if (!env.CMS_ADMIN_SETUP_TOKEN) {
+    throw new HttpError(503, 'CMS recovery is not configured. Contact the site administrator.', 'recovery_unavailable');
+  }
+  const body = await readJson(request);
+  const email = validateEmail(body.email);
+  const setupToken = asString(body.setupToken, 'Recovery token', 512);
+  const newPassword = validatePassword(body.newPassword);
+  await consumeRateLimit(
+    env,
+    `password-recovery:${requestClientKey(request)}:${email}`,
+    LOGIN_RATE_LIMIT,
+    LOGIN_RATE_WINDOW_SECONDS,
+    'Too many recovery attempts. Try again in a few minutes.',
+  );
+  if (!(await timingSafeEqual(setupToken, env.CMS_ADMIN_SETUP_TOKEN))) {
+    throw new HttpError(401, 'The recovery token is not valid.', 'invalid_recovery_token');
+  }
+  const account = await env.CMS_DB.prepare(
+    'SELECT id, email, display_name, role FROM cms_users WHERE email = ?',
+  ).bind(email).first<CmsUser>();
+  if (!account) throw new HttpError(404, 'No CMS account uses that email address.', 'not_found');
+  const passwordRecord = await createPasswordRecord(newPassword);
+  const updatedAt = now();
+  await env.CMS_DB.batch([
+    env.CMS_DB.prepare(
+      'UPDATE cms_users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?',
+    ).bind(passwordRecord.salt, passwordRecord.hash, updatedAt, account.id),
+    env.CMS_DB.prepare('DELETE FROM cms_sessions WHERE user_id = ?').bind(account.id),
+  ]);
+  await logAudit(env, { userId: account.id, action: 'user.password.recover', resourceType: 'user', resourceId: account.id });
+  return json({ reset: true });
 }
 
 async function listDocuments(request: Request, env: CmsEnv): Promise<Response> {
@@ -928,6 +1006,7 @@ async function publishDocument(id: string, user: CmsUser, env: CmsEnv): Promise<
   if (document.status === 'archived') {
     throw new HttpError(409, 'Restore this archived entry before publishing it.', 'archived');
   }
+  assertPublishable(document);
 
   const publishedAt = now();
   await env.CMS_DB.prepare(
@@ -1004,6 +1083,8 @@ async function scheduleDocument(id: string, request: Request, user: CmsUser, env
     return json({ document: formatDocument(await getDocument(id, env)) });
   }
 
+  assertPublishable(document);
+
   const requested = asString(body.publishAt, 'Publication time', 64);
   const publishAt = new Date(requested);
   if (Number.isNaN(publishAt.getTime()) || publishAt.getTime() <= Date.now() + 60_000) {
@@ -1020,20 +1101,199 @@ async function scheduleDocument(id: string, request: Request, user: CmsUser, env
 
 async function publishScheduledDocuments(env: CmsEnv): Promise<void> {
   const publishedAt = now();
+  await env.CMS_DB.batch([
+    env.CMS_DB.prepare('DELETE FROM cms_sessions WHERE expires_at <= ?').bind(publishedAt),
+    env.CMS_DB.prepare("DELETE FROM cms_rate_limits WHERE updated_at <= datetime('now', '-2 days')"),
+  ]);
   const due = await env.CMS_DB.prepare(
-    `SELECT id FROM cms_documents
+    `SELECT id, type, slug, title, status, data_json, published_data_json,
+       current_revision, published_revision, sort_order, created_at, updated_at, published_at, scheduled_at
+     FROM cms_documents
      WHERE scheduled_at IS NOT NULL AND scheduled_at <= ? AND status != 'archived'`,
-  ).bind(publishedAt).all<{ id: string }>();
+  ).bind(publishedAt).all<DocumentRow>();
   if (!due.results.length) return;
-  await env.CMS_DB.prepare(
-    `UPDATE cms_documents
-     SET status = 'published', published_data_json = data_json, published_revision = current_revision,
-       published_by = updated_by, published_at = ?, scheduled_at = NULL, updated_at = ?
-     WHERE scheduled_at IS NOT NULL AND scheduled_at <= ? AND status != 'archived'`,
-  ).bind(publishedAt, publishedAt, publishedAt).run();
   for (const document of due.results) {
+    const issues = publishIssues(document);
+    if (issues.length) {
+      await env.CMS_DB.prepare(
+        'UPDATE cms_documents SET scheduled_at = NULL, updated_at = ? WHERE id = ?',
+      ).bind(publishedAt, document.id).run();
+      await logAudit(env, {
+        userId: null,
+        action: 'document.publish.scheduled.blocked',
+        resourceType: 'document',
+        resourceId: document.id,
+        detail: issues.slice(0, 3).join(' | '),
+      });
+      continue;
+    }
+    await env.CMS_DB.prepare(
+      `UPDATE cms_documents
+       SET status = 'published', published_data_json = data_json, published_revision = current_revision,
+         published_by = updated_by, published_at = ?, scheduled_at = NULL, updated_at = ?
+       WHERE id = ?`,
+    ).bind(publishedAt, publishedAt, document.id).run();
     await logAudit(env, { userId: null, action: 'document.publish.scheduled', resourceType: 'document', resourceId: document.id, detail: publishedAt });
   }
+}
+
+function publishText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isPlaceholderText(value: unknown): boolean {
+  const normalized = publishText(value).replace(/[.!]+$/, '').trim();
+  return /^(?:test|todo|tbd|untitled|lorem ipsum|new(?:\s+[a-z0-9_-]+)?)$/i.test(normalized);
+}
+
+function publishRows(value: unknown): string[] {
+  return publishText(value)
+    .replaceAll('\\n', '\n')
+    .split('\n')
+    .map((row) => row.trim())
+    .filter(Boolean);
+}
+
+function isSafePublishUrl(value: unknown, allowEmpty = false): boolean {
+  const url = publishText(value);
+  if (!url) return allowEmpty;
+  return /^(?:https:\/\/|\/|#|mailto:|tel:)[^\s<>]*$/i.test(url);
+}
+
+function validatePublishableBuilderNode(node: unknown, path: string, issues: string[]): void {
+  if (!isRecord(node) || !isRecord(node.props)) return;
+  const type = publishText(node.type);
+  const props = node.props;
+  const needText = (key: string, label: string) => {
+    const value = props[key];
+    if (!publishText(value)) issues.push(`${path}: ${label} is required.`);
+    else if (isPlaceholderText(value)) issues.push(`${path}: replace the placeholder ${label.toLowerCase()} “${publishText(value)}”.`);
+  };
+  const needUrl = (key: string, label: string, allowEmpty = false) => {
+    if (!isSafePublishUrl(props[key], allowEmpty)) issues.push(`${path}: ${label} must be a valid HTTPS, site, anchor, email, or phone link.`);
+  };
+  const validateRecords = (label: string, columns: number, requiredColumns: number, featureColumn = -1) => {
+    const rows = publishRows(props.items);
+    if (!rows.length) {
+      issues.push(`${path}: add at least one ${label.toLowerCase()}.`);
+      return;
+    }
+    rows.forEach((row, index) => {
+      const values = row.split('|').map((value) => value.trim());
+      const itemPath = `${path}, ${label} ${index + 1}`;
+      if (values.length < columns) issues.push(`${itemPath}: complete all required fields.`);
+      for (let column = 0; column < requiredColumns; column += 1) {
+        if (!values[column]) issues.push(`${itemPath}: field ${column + 1} is required.`);
+        else if (isPlaceholderText(values[column])) issues.push(`${itemPath}: replace “${values[column]}” before publishing.`);
+      }
+      if (featureColumn >= 0 && !values[featureColumn]?.split(';').some((value) => value.trim())) {
+        issues.push(`${itemPath}: add at least one feature.`);
+      }
+    });
+  };
+
+  if (type === 'brand_hero') {
+    needText('eyebrow', 'Eyebrow');
+    needText('title', 'Title');
+    needText('body', 'Description');
+    needText('primaryLabel', 'Primary button label');
+    needUrl('primaryHref', 'Primary button link');
+  } else if (type === 'solution_grid') {
+    needText('heading', 'Heading');
+    needText('body', 'Description');
+    validateRecords('Solution', 3, 2, 2);
+  } else if (type === 'service_list') {
+    needText('heading', 'Heading');
+    needText('body', 'Description');
+    const rows = publishRows(props.items);
+    if (!rows.length) issues.push(`${path}: add at least one service.`);
+    rows.forEach((row, index) => {
+      if (isPlaceholderText(row)) issues.push(`${path}, Service ${index + 1}: replace “${row}” before publishing.`);
+    });
+    needUrl('href', 'Service link');
+  } else if (type === 'partner_directory') {
+    needText('heading', 'Heading');
+    needText('body', 'Description');
+    validateRecords('Partner', 2, 2);
+  } else if (type === 'logo_grid') {
+    needText('heading', 'Heading');
+    needText('body', 'Description');
+    const rows = publishRows(props.items);
+    if (!rows.length) issues.push(`${path}: add at least one client.`);
+    rows.forEach((row, index) => {
+      const [name = '', logo = ''] = row.split('|').map((value) => value.trim());
+      const itemPath = `${path}, Client ${index + 1}`;
+      if (!name || isPlaceholderText(name)) issues.push(`${itemPath}: enter a real client name.`);
+      if (!isSafePublishUrl(logo)) issues.push(`${itemPath}: choose or enter a valid logo URL.`);
+    });
+  } else if (type === 'method_list' || type === 'feature_grid' || type === 'testimonials' || type === 'statistics' || type === 'pricing' || type === 'faq') {
+    needText('heading', 'Heading');
+    validateRecords('Item', 2, 2);
+  } else if (type === 'heading') {
+    needText('text', 'Heading');
+  } else if (type === 'text' || type === 'rich_text') {
+    needText('text', 'Text');
+  } else if (type === 'image') {
+    needUrl('src', 'Image URL');
+    needText('alt', 'Alternative text');
+  } else if (type === 'button' || type === 'link') {
+    needText('label', 'Label');
+    needUrl('href', 'Link');
+  } else if (type === 'contact_panel' || type === 'partner_contact' || type === 'continuity_panel' || type === 'cta') {
+    needText('heading', 'Heading');
+    needText('body', 'Description');
+  }
+
+  if (Array.isArray(node.children)) {
+    node.children.forEach((child, index) => validatePublishableBuilderNode(child, `${path} > block ${index + 1}`, issues));
+  }
+}
+
+function publishIssues(document: DocumentRow): string[] {
+  const issues: string[] = [];
+  if (isPlaceholderText(document.title)) issues.push(`Document title “${document.title}” is still a placeholder.`);
+  const data = parseStoredData(document.data_json);
+
+  if (document.type === 'builder_page') {
+    const settings = isRecord(data.settings) ? data.settings : {};
+    if (!publishText(settings.seoTitle)) issues.push('Page settings: add a search title.');
+    if (publishText(settings.seoDescription) && isPlaceholderText(settings.seoDescription)) {
+      issues.push('Page settings: replace the placeholder search description.');
+    }
+    if (isRecord(data.slots)) {
+      for (const [slot, nodes] of Object.entries(data.slots)) {
+        if (!Array.isArray(nodes)) continue;
+        nodes.forEach((node, index) => validatePublishableBuilderNode(node, `${slot}, block ${index + 1}`, issues));
+      }
+    }
+  } else if (document.type === 'solution') {
+    if (!publishText(data.description)) issues.push('Solution description is required.');
+    if (!Array.isArray(data.items) || !data.items.some((item) => publishText(item))) issues.push('Add at least one solution feature.');
+  } else if (document.type === 'partner') {
+    if (!publishText(data.focus)) issues.push('Partner focus is required.');
+  } else if (document.type === 'client') {
+    if (!isSafePublishUrl(data.logo)) issues.push('Choose or enter a valid client logo URL.');
+  } else if (document.type === 'navigation') {
+    if (!Array.isArray(data.items) || !data.items.length) issues.push('Add at least one navigation link.');
+    for (const [index, item] of (Array.isArray(data.items) ? data.items : []).entries()) {
+      if (!isRecord(item) || !publishText(item.label) || isPlaceholderText(item.label)) issues.push(`Navigation item ${index + 1}: enter a real label.`);
+      if (!isRecord(item) || !isSafePublishUrl(item.href)) issues.push(`Navigation item ${index + 1}: enter a valid link.`);
+    }
+  }
+
+  return [...new Set(issues)].slice(0, 40);
+}
+
+function assertPublishable(document: DocumentRow): void {
+  const issues = publishIssues(document);
+  if (issues.length) {
+    throw new HttpError(422, `Fix ${issues.length} publishing issue${issues.length === 1 ? '' : 's'} before this content can go live.`, 'publish_validation_failed', issues);
+  }
+}
+
+async function validateDocumentForPublish(id: string, env: CmsEnv): Promise<Response> {
+  assertPublishable(await getDocument(id, env));
+  return json({ valid: true });
 }
 
 async function listRevisions(id: string, env: CmsEnv): Promise<Response> {
@@ -1145,7 +1405,7 @@ async function deleteUser(id: string, user: CmsUser, env: CmsEnv): Promise<Respo
 async function getChatConversation(id: string, env: CmsEnv): Promise<ChatConversationRow> {
   const conversation = await env.CMS_DB.prepare(
     `SELECT id, visitor_name, visitor_email, status, last_message_preview, last_sender_type,
-      created_at, updated_at, last_message_at
+      created_at, updated_at, last_message_at, admin_read_at
      FROM cms_chat_conversations WHERE id = ?`,
   )
     .bind(id)
@@ -1170,7 +1430,7 @@ async function requireVisitorConversation(id: string, request: Request, env: Cms
   const tokenHash = await sha256Hex(token);
   const conversation = await env.CMS_DB.prepare(
     `SELECT id, visitor_name, visitor_email, status, last_message_preview, last_sender_type,
-      created_at, updated_at, last_message_at
+      created_at, updated_at, last_message_at, admin_read_at
      FROM cms_chat_conversations WHERE id = ? AND visitor_token_hash = ?`,
   )
     .bind(id, tokenHash)
@@ -1180,6 +1440,13 @@ async function requireVisitorConversation(id: string, request: Request, env: Cms
 }
 
 async function createVisitorConversation(request: Request, env: CmsEnv): Promise<Response> {
+  await consumeRateLimit(
+    env,
+    `chat-create:${requestClientKey(request)}`,
+    CHAT_CREATE_RATE_LIMIT,
+    CHAT_RATE_WINDOW_SECONDS,
+    'Too many new conversations were started from this connection. Try again later.',
+  );
   const body = await readJson(request);
   const visitorName = asOptionalString(body.visitorName, 80) || 'Website visitor';
   const visitorEmail = validateOptionalEmail(body.visitorEmail) ?? null;
@@ -1218,6 +1485,13 @@ async function createVisitorConversation(request: Request, env: CmsEnv): Promise
 }
 
 async function addVisitorMessage(id: string, request: Request, env: CmsEnv): Promise<Response> {
+  await consumeRateLimit(
+    env,
+    `chat-message:${requestClientKey(request)}`,
+    CHAT_MESSAGE_RATE_LIMIT,
+    CHAT_RATE_WINDOW_SECONDS,
+    'Too many messages were sent from this connection. Try again later.',
+  );
   const body = await readJson(request);
   const message = validateChatMessage(body.message);
   const conversation = await requireVisitorConversation(id, request, env);
@@ -1265,7 +1539,7 @@ async function publicChat(parts: string[], request: Request, env: CmsEnv): Promi
 async function listConversations(env: CmsEnv): Promise<Response> {
   const conversations = await env.CMS_DB.prepare(
     `SELECT id, visitor_name, visitor_email, status, last_message_preview, last_sender_type,
-      created_at, updated_at, last_message_at
+      created_at, updated_at, last_message_at, admin_read_at
      FROM cms_chat_conversations ORDER BY last_message_at DESC LIMIT ?`,
   )
     .bind(MAX_CHAT_CONVERSATIONS)
@@ -1276,6 +1550,36 @@ async function listConversations(env: CmsEnv): Promise<Response> {
 async function getAdminConversation(id: string, env: CmsEnv): Promise<Response> {
   const [conversation, messages] = await Promise.all([getChatConversation(id, env), getConversationMessages(id, env)]);
   return json({ conversation: formatChatConversation(conversation, true), messages: messages.map(formatChatMessage) });
+}
+
+async function markConversationRead(id: string, env: CmsEnv): Promise<Response> {
+  await getChatConversation(id, env);
+  const readAt = now();
+  await env.CMS_DB.prepare(
+    'UPDATE cms_chat_conversations SET admin_read_at = ? WHERE id = ?',
+  ).bind(readAt, id).run();
+  return json({ read: true, readAt });
+}
+
+async function updateConversationStatus(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const conversation = await getChatConversation(id, env);
+  const body = await readJson(request);
+  if (body.status !== 'open' && body.status !== 'closed') {
+    throw new HttpError(400, 'Conversation status must be open or closed.', 'invalid_input');
+  }
+  const status = body.status;
+  const updatedAt = now();
+  await env.CMS_DB.prepare(
+    'UPDATE cms_chat_conversations SET status = ?, admin_read_at = ?, updated_at = ? WHERE id = ?',
+  ).bind(status, updatedAt, updatedAt, id).run();
+  await logAudit(env, {
+    userId: user.id,
+    action: `conversation.${status}`,
+    resourceType: 'conversation',
+    resourceId: id,
+    detail: `${conversation.visitor_name} marked ${status}`,
+  });
+  return json({ conversation: formatChatConversation(await getChatConversation(id, env), true) });
 }
 
 async function addAdminMessage(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
@@ -1300,9 +1604,9 @@ async function addAdminMessage(id: string, request: Request, user: CmsUser, env:
     ).bind(messageRow.id, id, user.display_name, message, createdAt),
     env.CMS_DB.prepare(
       `UPDATE cms_chat_conversations
-       SET last_message_preview = ?, last_sender_type = 'admin', updated_at = ?, last_message_at = ?
+       SET last_message_preview = ?, last_sender_type = 'admin', admin_read_at = ?, updated_at = ?, last_message_at = ?
        WHERE id = ?`,
-    ).bind(message.slice(0, 180), createdAt, createdAt, id),
+    ).bind(message.slice(0, 180), createdAt, createdAt, createdAt, id),
   ]);
   return json({ message: formatChatMessage(messageRow) }, { status: 201 });
 }
@@ -1563,6 +1867,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
   const adminRoute = parts.slice(2);
   if (adminRoute[0] === 'bootstrap' && request.method === 'POST') return bootstrap(request, env);
   if (adminRoute[0] === 'login' && request.method === 'POST') return login(request, env);
+  if (adminRoute[0] === 'recover-password' && request.method === 'POST') return recoverPassword(request, env);
   if (adminRoute[0] === 'logout' && request.method === 'POST') {
     const token = readBearerToken(request);
     if (token) await env.CMS_DB.prepare('DELETE FROM cms_sessions WHERE token_hash = ?').bind(await sha256Hex(token)).run();
@@ -1571,6 +1876,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
 
   const user = await requireUser(request, env);
   if (adminRoute[0] === 'me' && request.method === 'GET') return json({ user: formatUser(user) });
+  if (adminRoute[0] === 'change-password' && request.method === 'POST') return changePassword(request, user, env);
 
   if (adminRoute[0] === 'users') {
     requireRole(user, 'admin');
@@ -1590,6 +1896,10 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     const conversationId = adminRoute[1] ? validateConversationId(decodeURIComponent(adminRoute[1])) : '';
     if (!conversationId) throw new HttpError(404, 'Route was not found.', 'not_found');
     if (adminRoute.length === 2 && request.method === 'GET') return getAdminConversation(conversationId, env);
+    if (adminRoute.length === 2 && request.method === 'PATCH') return updateConversationStatus(conversationId, request, user, env);
+    if (adminRoute.length === 3 && adminRoute[2] === 'read' && request.method === 'POST') {
+      return markConversationRead(conversationId, env);
+    }
     if (adminRoute.length === 3 && adminRoute[2] === 'messages' && request.method === 'POST') {
       return addAdminMessage(conversationId, request, user, env);
     }
@@ -1615,6 +1925,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     if (!documentId) throw new HttpError(404, 'Route was not found.', 'not_found');
     if (adminRoute.length === 2 && request.method === 'PATCH') return updateDocument(documentId, request, user, env);
     if (adminRoute.length === 2 && request.method === 'DELETE') return archiveDocument(documentId, user, env);
+    if (adminRoute[2] === 'validate-publish' && request.method === 'POST') return validateDocumentForPublish(documentId, env);
     if (adminRoute[2] === 'publish' && request.method === 'POST') return publishDocument(documentId, user, env);
     if (adminRoute[2] === 'unpublish' && request.method === 'POST') return unpublishDocument(documentId, user, env);
     if (adminRoute[2] === 'schedule' && request.method === 'POST') return scheduleDocument(documentId, request, user, env);
@@ -1647,7 +1958,7 @@ export default {
     } catch (error) {
       const url = new URL(request.url);
       if (error instanceof HttpError) {
-        return withCors(json({ error: error.message, code: error.code }, { status: error.status }), request, env);
+        return withCors(json({ error: error.message, code: error.code, ...(error.issues ? { issues: [...error.issues] } : {}) }, { status: error.status }), request, env);
       }
       console.error(JSON.stringify({
         message: 'Unhandled CMS request error',

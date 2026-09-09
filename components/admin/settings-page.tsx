@@ -1,6 +1,7 @@
 'use client';
 
 import { CMS_API } from '@/lib/cms-api';
+import { getCmsToken, setCmsToken } from '@/lib/admin-session';
 
 import { useCallback, useEffect, useState } from 'react';
 import { Save, Eye, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
@@ -33,7 +34,7 @@ interface SocialLink {
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
 export function SettingsPage() {
-  const [tab, setTab] = useState<'site' | 'nav'>('site');
+  const [tab, setTab] = useState<'site' | 'nav' | 'security'>('site');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -60,12 +61,15 @@ export function SettingsPage() {
   const [navItems, setNavItems] = useState<NavItem[]>([]);
   const [newNavLabel, setNewNavLabel] = useState('');
   const [newNavHref, setNewNavHref] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const headers = { authorization: `Bearer ${token}` };
       const [settingsRes, navRes] = await Promise.all([
         fetch(`${CMS_API}/v1/admin/documents?type=site_settings&limit=100`, { headers }),
@@ -115,7 +119,7 @@ export function SettingsPage() {
   useEffect(() => { void load(); }, [load]);
 
   const saveDoc = async (type: string, slug: string, title: string, data: Record<string, unknown>, existingId: string | null): Promise<string> => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const headers = { 'Content-Type': 'application/json', authorization: `Bearer ${token}` };
     if (existingId) {
       const res = await fetch(`${CMS_API}/v1/admin/documents/${existingId}`, {
@@ -138,14 +142,43 @@ export function SettingsPage() {
   };
 
   const publishDoc = async (id: string) => {
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const res = await fetch(`${CMS_API}/v1/admin/documents/${id}/publish`, {
       method: 'POST',
       headers: { authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      const out = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(out.error ?? 'Publish failed.');
+      const out = (await res.json().catch(() => ({}))) as { error?: string; issues?: string[] };
+      throw new Error([out.error ?? 'Publish failed.', ...(out.issues ?? [])].join(' '));
+    }
+  };
+
+  const changePassword = async () => {
+    setError('');
+    setMessage('');
+    if (newPassword !== confirmPassword) {
+      setError('The new passwords do not match.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const token = getCmsToken();
+      const response = await fetch(`${CMS_API}/v1/admin/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { token?: string; error?: string };
+      if (!response.ok || !result.token) throw new Error(result.error ?? 'Password change failed.');
+      setCmsToken(result.token);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setMessage('Password changed. Other signed-in devices were logged out.');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Password change failed.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -198,6 +231,7 @@ export function SettingsPage() {
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
         <button className={`admin-btn ${tab === 'site' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} type="button" onClick={() => setTab('site')}>Site settings</button>
         <button className={`admin-btn ${tab === 'nav' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} type="button" onClick={() => setTab('nav')}>Navigation</button>
+        <button className={`admin-btn ${tab === 'security' ? 'admin-btn-primary' : 'admin-btn-secondary'}`} type="button" onClick={() => setTab('security')}>Security</button>
       </div>
       {error && <div className="admin-card" style={{ marginBottom: '1rem', color: '#991b1b', fontSize: '0.85rem' }}>{error}</div>}
       {message && <div className="admin-card" style={{ marginBottom: '1rem', color: '#166534', fontSize: '0.85rem' }}>{message}</div>}
@@ -287,6 +321,28 @@ export function SettingsPage() {
             <button className="admin-btn admin-btn-secondary" type="button" disabled={saving} onClick={() => void saveNav(false)}><Save size={16} /> {saving ? 'Saving...' : 'Save Draft'}</button>
             <button className="admin-btn admin-btn-primary" type="button" disabled={saving} onClick={() => void saveNav(true)}><Eye size={16} /> Save & Publish</button>
           </div>
+        </div>
+      )}
+
+      {tab === 'security' && (
+        <div className="admin-card" style={{ maxWidth: 620 }}>
+          <h3 style={{ marginTop: 0 }}>Change password</h3>
+          <p style={{ color: '#705766', fontSize: '0.9rem' }}>Use at least 12 characters. Saving logs out every other active CMS session.</p>
+          <div className="admin-form-group">
+            <label htmlFor="current-password">Current password</label>
+            <input id="current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} required />
+          </div>
+          <div className="admin-form-group">
+            <label htmlFor="new-password">New password</label>
+            <input id="new-password" type="password" autoComplete="new-password" minLength={12} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
+          </div>
+          <div className="admin-form-group">
+            <label htmlFor="confirm-password">Confirm new password</label>
+            <input id="confirm-password" type="password" autoComplete="new-password" minLength={12} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} required />
+          </div>
+          <button className="admin-btn admin-btn-primary" type="button" disabled={saving || !currentPassword || newPassword.length < 12 || !confirmPassword} onClick={() => void changePassword()}>
+            {saving ? 'Updating…' : 'Update password'}
+          </button>
         </div>
       )}
     </div>

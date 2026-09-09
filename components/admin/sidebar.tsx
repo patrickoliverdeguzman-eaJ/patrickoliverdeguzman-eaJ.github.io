@@ -18,11 +18,11 @@ const navItems = [
   { href: '/admin/documents', label: 'Documents', icon: FileText },
   { href: '/admin/visual-editor', label: 'Visual editor', icon: PanelsTopLeft },
   { href: '/admin/media', label: 'Media Library', icon: Image },
-  { href: '/admin/users', label: 'Users', icon: Users },
-  { href: '/admin/chat', label: 'Chat', icon: MessageCircle },
+  { href: '/admin/users', label: 'Users', icon: Users, adminOnly: true },
+  { href: '/admin/chat', label: 'Chat', icon: MessageCircle, adminOnly: true },
 ];
 
-export function AdminSidebar() {
+export function AdminSidebar({ role }: { role: string }) {
   const [pathname, setPathname] = useState('');
 
   useEffect(() => {
@@ -44,7 +44,7 @@ export function AdminSidebar() {
         <span>INFOStorage</span>
       </div>
       <nav>
-        {navItems.map((item) => (
+        {navItems.filter((item) => !item.adminOnly || role === 'admin').map((item) => (
           <Link
             key={item.href}
             href={adminPath(item.href)}

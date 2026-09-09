@@ -2,7 +2,7 @@
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "infostorage-cms",
   "main": "src/worker.ts",
-  "compatibility_date": "2026-09-05",
+  "compatibility_date": "2026-09-09",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
     "PUBLIC_ORIGINS": "https://infostorage-enterprise.yasuoxd-yx.chatgpt.site,https://patrickoliverdeguzman-eaj.github.io,http://localhost:3000,http://127.0.0.1:3000"

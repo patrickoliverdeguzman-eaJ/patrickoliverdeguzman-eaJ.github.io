@@ -45,6 +45,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { CMS_API } from '@/lib/cms-api';
+import { getCmsToken } from '@/lib/admin-session';
 import { adminPath } from '@/lib/site-paths';
 import { CmsSitePage } from '@/components/cms-site-page';
 import { CustomPageLayout } from '@/components/custom-page-layout';
@@ -591,7 +592,7 @@ export function VisualEditor() {
   );
   const queueDocumentSave = useCallback((document: CmsDocument, note: string) => {
     const save = documentSaveQueueRef.current.then(async () => {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents/${document.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -615,7 +616,7 @@ export function VisualEditor() {
     setStatus('loading');
     setMessage('Loading editor…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const headers = { authorization: `Bearer ${token}` };
       const [documentsResponse, mediaResponse] = await Promise.all([
         fetch(`${CMS_API}/v1/admin/documents?limit=100`, { headers }),
@@ -797,7 +798,7 @@ export function VisualEditor() {
     setStatus('saving');
     setMessage('Preparing a structured page canvas…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -835,7 +836,7 @@ export function VisualEditor() {
     setStatus('saving');
     setMessage('Creating page draft…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -878,7 +879,7 @@ export function VisualEditor() {
     setStatus('saving');
     setMessage('Duplicating page…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const title = `${activeCustomPage.title} copy`;
       const slug = nextSlug(activeCustomPage.slug);
       const response = await fetch(`${CMS_API}/v1/admin/documents`, {
@@ -900,7 +901,7 @@ export function VisualEditor() {
 
   const unpublishActivePage = async () => {
     if (!activeCustomPage || activeCustomPage.status !== 'published') return;
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${activeCustomPage.id}/unpublish`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
     if (!response.ok) {
       setStatus('error');
@@ -913,7 +914,7 @@ export function VisualEditor() {
 
   const archiveActivePage = async () => {
     if (!activeCustomPage || !window.confirm(`Archive “${activeCustomPage.title}”? Its saved revisions remain available in the CMS.`)) return;
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${activeCustomPage.id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
     if (!response.ok) {
       setStatus('error');
@@ -939,7 +940,7 @@ export function VisualEditor() {
     }
     setStatus('publishing');
     setMessage('Setting homepage…');
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const data = { ...globalSettings.data, homepageSlug: activeCustomPage.slug };
     const update = await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ title: globalSettings.title, slug: globalSettings.slug, data, note: `Set ${activeCustomPage.slug} as homepage` }) });
     const publish = update.ok ? await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}/publish`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }) : update;
@@ -1061,7 +1062,7 @@ export function VisualEditor() {
     setStatus('saving');
     setMessage(`Saving ${kind} template…`);
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -1155,7 +1156,7 @@ export function VisualEditor() {
     setStatus('saving');
     setMessage('Creating editable draft bindings…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const headers = {
         'Content-Type': 'application/json',
         authorization: `Bearer ${token}`,
@@ -1246,7 +1247,12 @@ export function VisualEditor() {
   const publishPage = async () => {
     const saved = await saveDrafts();
     if (!saved) return;
-    const ids = pageDocuments.map((document) => document.id);
+    // Validate/publish the page canvas before its supporting records. This
+    // prevents a rejected page (for example, one with placeholder blocks) from
+    // partially publishing related entries first.
+    const ids = [...pageDocuments]
+      .sort((left, right) => Number(right.type === 'builder_page') - Number(left.type === 'builder_page'))
+      .map((document) => document.id);
     if (!ids.length) {
       setStatus('error');
       setMessage('Import the existing site before publishing this page.');
@@ -1255,7 +1261,17 @@ export function VisualEditor() {
     setStatus('publishing');
     setMessage('Publishing…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
+      for (const id of ids) {
+        const response = await fetch(`${CMS_API}/v1/admin/documents/${id}/validate-publish`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}` },
+        });
+        const result = (await response.json().catch(() => ({}))) as { error?: string; issues?: string[] };
+        if (!response.ok) {
+          throw new Error([result.error ?? 'The page could not be published.', ...(result.issues ?? [])].join(' '));
+        }
+      }
       for (const id of ids) {
         const response = await fetch(
           `${CMS_API}/v1/admin/documents/${id}/publish`,
@@ -1266,9 +1282,10 @@ export function VisualEditor() {
         );
         const result = (await response.json().catch(() => ({}))) as {
           error?: string;
+          issues?: string[];
         };
         if (!response.ok)
-          throw new Error(result.error ?? 'The page could not be published.');
+          throw new Error([result.error ?? 'The page could not be published.', ...(result.issues ?? [])].join(' '));
       }
       setDocuments((current) =>
         current.map((document) =>
@@ -1309,16 +1326,16 @@ export function VisualEditor() {
     }
     setStatus('publishing');
     setMessage('Scheduling publication…');
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/schedule`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
       body: JSON.stringify({ publishAt: publishAt.toISOString() }),
     });
-    const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+    const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string; issues?: string[] };
     if (!response.ok || !result.document) {
       setStatus('error');
-      setMessage(result.error ?? 'The page could not be scheduled.');
+      setMessage([result.error ?? 'The page could not be scheduled.', ...(result.issues ?? [])].join(' '));
       return;
     }
     setDocuments((current) => current.map((document) => document.id === result.document!.id ? result.document! : document));
@@ -1328,7 +1345,7 @@ export function VisualEditor() {
 
   const cancelScheduledPage = async () => {
     if (!builderDocument?.scheduledAt) return;
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/schedule`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -1347,7 +1364,7 @@ export function VisualEditor() {
   const showRevisions = async () => {
     if (!builderDocument) return;
     setRevisionsOpen(true);
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/revisions`, { headers: { authorization: `Bearer ${token}` } });
     const result = (await response.json().catch(() => ({}))) as { revisions?: CmsRevision[]; error?: string };
     if (!response.ok) {
@@ -1360,7 +1377,7 @@ export function VisualEditor() {
 
   const restorePageRevision = async (revisionNumber: number) => {
     if (!builderDocument || !window.confirm(`Restore revision ${revisionNumber} as the current draft?`)) return;
-    const token = localStorage.getItem('cms_token');
+    const token = getCmsToken();
     const response = await fetch(`${CMS_API}/v1/admin/documents/${builderDocument.id}/restore/${revisionNumber}`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
     if (!response.ok) {
       setStatus('error');
@@ -1407,7 +1424,7 @@ export function VisualEditor() {
     setStatus('saving');
     setMessage(`Adding ${baseTitle.toLowerCase()}…`);
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents`, {
         method: 'POST',
         headers: {
@@ -1454,7 +1471,7 @@ export function VisualEditor() {
       return;
     setStatus('saving');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const title = `${document.title} copy`;
       const response = await fetch(`${CMS_API}/v1/admin/documents`, {
         method: 'POST',
@@ -1507,7 +1524,7 @@ export function VisualEditor() {
     )
       return;
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(
         `${CMS_API}/v1/admin/documents/${document.id}`,
         { method: 'DELETE', headers: { authorization: `Bearer ${token}` } },
@@ -1544,7 +1561,7 @@ export function VisualEditor() {
     setDocuments(currentPositions);
     setMessage('Reordering blocks…');
     try {
-      const token = localStorage.getItem('cms_token');
+      const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents/reorder`, {
         method: 'PATCH',
         headers: {
