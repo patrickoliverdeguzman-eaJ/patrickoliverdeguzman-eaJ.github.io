@@ -13,6 +13,8 @@ interface CmsDoc {
   title: string;
   status: string;
   data: Record<string, unknown>;
+  currentRevision: number;
+  publishedRevision: number | null;
 }
 
 interface DocListResponse {
@@ -41,6 +43,8 @@ export function SettingsPage() {
   const [error, setError] = useState('');
   const [settingsId, setSettingsId] = useState<string | null>(null);
   const [navId, setNavId] = useState<string | null>(null);
+  const [settingsRevision, setSettingsRevision] = useState<number | null>(null);
+  const [navRevision, setNavRevision] = useState<number | null>(null);
 
   const [siteName, setSiteName] = useState('INFOStorage');
   const [companyName, setCompanyName] = useState('INFOStorage Corporation');
@@ -81,6 +85,7 @@ export function SettingsPage() {
       const navDoc = navData.documents?.find((d) => d.slug === 'main') ?? null;
       if (settingsDoc) {
         setSettingsId(settingsDoc.id);
+        setSettingsRevision(settingsDoc.currentRevision);
         const d = settingsDoc.data ?? {};
         setSiteName(text(d.siteName) || 'INFOStorage');
         setCompanyName(text(d.companyName) || 'INFOStorage Corporation');
@@ -98,6 +103,7 @@ export function SettingsPage() {
       }
       if (navDoc) {
         setNavId(navDoc.id);
+        setNavRevision(navDoc.currentRevision);
         const items = Array.isArray((navDoc.data ?? {}).items) ? ((navDoc.data as { items: NavItem[] }).items) : [];
         setNavItems(items.map((item, i) => ({ id: item.id || `nav-${i}`, label: item.label, href: item.href, enabled: item.enabled !== false })));
       } else {
@@ -118,18 +124,18 @@ export function SettingsPage() {
 
   useEffect(() => { void load(); }, [load]);
 
-  const saveDoc = async (type: string, slug: string, title: string, data: Record<string, unknown>, existingId: string | null): Promise<string> => {
+  const saveDoc = async (type: string, slug: string, title: string, data: Record<string, unknown>, existingId: string | null, expectedRevision: number | null): Promise<CmsDoc> => {
     const token = getCmsToken();
     const headers = { 'Content-Type': 'application/json', authorization: `Bearer ${token}` };
     if (existingId) {
       const res = await fetch(`${CMS_API}/v1/admin/documents/${existingId}`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ title, data }),
+        body: JSON.stringify({ title, data, expectedRevision: expectedRevision ?? undefined }),
       });
       const out = (await res.json()) as { document?: CmsDoc; error?: string };
       if (!res.ok || !out.document) throw new Error(out.error ?? 'Save failed.');
-      return out.document.id;
+      return out.document;
     }
     const res = await fetch(`${CMS_API}/v1/admin/documents`, {
       method: 'POST',
@@ -138,19 +144,21 @@ export function SettingsPage() {
     });
     const out = (await res.json()) as { document?: CmsDoc; error?: string };
     if (!res.ok || !out.document) throw new Error(out.error ?? 'Save failed.');
-    return out.document.id;
+    return out.document;
   };
 
-  const publishDoc = async (id: string) => {
+  const publishDoc = async (document: CmsDoc): Promise<CmsDoc> => {
     const token = getCmsToken();
-    const res = await fetch(`${CMS_API}/v1/admin/documents/${id}/publish`, {
+    const res = await fetch(`${CMS_API}/v1/admin/documents/publish-batch`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ documents: [{ id: document.id, expectedRevision: document.currentRevision }] }),
     });
-    if (!res.ok) {
-      const out = (await res.json().catch(() => ({}))) as { error?: string; issues?: string[] };
+    const out = (await res.json().catch(() => ({}))) as { documents?: CmsDoc[]; error?: string; issues?: string[] };
+    if (!res.ok || !out.documents?.[0]) {
       throw new Error([out.error ?? 'Publish failed.', ...(out.issues ?? [])].join(' '));
     }
+    return out.documents[0];
   };
 
   const changePassword = async () => {
@@ -188,9 +196,11 @@ export function SettingsPage() {
     setError('');
     try {
       const data = { siteName, companyName, email, phone, phoneHref, address, addressUrl, logo, copyright, defaultSeoTitle: seoTitle, defaultSeoDescription: seoDescription, ogImage, social };
-      const id = await saveDoc('site_settings', 'global', 'Global site settings', data, settingsId);
-      setSettingsId(id);
-      if (publish) await publishDoc(id);
+      let document = await saveDoc('site_settings', 'global', 'Global site settings', data, settingsId, settingsRevision);
+      setSettingsId(document.id);
+      setSettingsRevision(document.currentRevision);
+      if (publish) document = await publishDoc(document);
+      setSettingsRevision(document.currentRevision);
       setMessage(publish ? 'Site settings saved and published.' : 'Site settings saved as draft.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed.');
@@ -204,9 +214,11 @@ export function SettingsPage() {
     setMessage('');
     setError('');
     try {
-      const id = await saveDoc('navigation', 'main', 'Main navigation', { items: navItems }, navId);
-      setNavId(id);
-      if (publish) await publishDoc(id);
+      let document = await saveDoc('navigation', 'main', 'Main navigation', { items: navItems }, navId, navRevision);
+      setNavId(document.id);
+      setNavRevision(document.currentRevision);
+      if (publish) document = await publishDoc(document);
+      setNavRevision(document.currentRevision);
       setMessage(publish ? 'Navigation saved and published.' : 'Navigation saved as draft.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed.');

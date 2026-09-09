@@ -425,6 +425,7 @@ export default function CmsWorkspace() {
         slug: draft.slug,
         data,
         note: draft.note || undefined,
+        expectedRevision: draft.id ? selectedDocument?.currentRevision : undefined,
       });
       const response = draft.id
         ? await api<{ document: CmsDocument }>(
@@ -476,7 +477,15 @@ export default function CmsWorkspace() {
         action === 'archive'
           ? `/v1/admin/documents/${selectedDocument.id}`
           : `/v1/admin/documents/${selectedDocument.id}/${action}`;
-      const response = await api<{ document: CmsDocument }>(path, { method });
+      const response = await api<{ document: CmsDocument }>(path, {
+        method,
+        ...(action === 'publish'
+          ? {
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ expectedRevision: selectedDocument.currentRevision }),
+            }
+          : {}),
+      });
       setSelectedDocument(response.document);
       setDraft(fromDocument(response.document));
       await loadDocuments();

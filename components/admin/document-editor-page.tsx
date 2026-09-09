@@ -38,6 +38,8 @@ interface DocumentData {
   slug: string;
   title: string;
   status: string;
+  currentRevision: number;
+  publishedRevision: number | null;
   data: {
     blocks: Block[];
     [key: string]: unknown;
@@ -71,6 +73,7 @@ export function DocumentEditorPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [revisionConflict, setRevisionConflict] = useState(false);
   const [newBlockType, setNewBlockType] = useState('');
   const [preview, setPreview] = useState<'draft' | 'published'>('draft');
   const [media, setMedia] = useState<MediaAsset[]>([]);
@@ -149,11 +152,15 @@ export function DocumentEditorPage() {
     const response = await fetch(`${CMS_API}/v1/admin/documents/${documentId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ title: doc.title, slug: doc.slug, data: doc.data }),
+      body: JSON.stringify({ title: doc.title, slug: doc.slug, data: doc.data, expectedRevision: doc.currentRevision }),
     });
-    const result = (await response.json().catch(() => ({}))) as { document?: DocumentData; error?: string };
-    if (!response.ok || !result.document) throw new Error(result.error ?? 'The draft could not be saved.');
+    const result = (await response.json().catch(() => ({}))) as { document?: DocumentData; error?: string; code?: string };
+    if (!response.ok || !result.document) {
+      if (result.code === 'revision_conflict') setRevisionConflict(true);
+      throw new Error(result.error ?? 'The draft could not be saved.');
+    }
     const saved = normalizeDocument(result.document);
+    setRevisionConflict(false);
     setDoc(saved);
     return saved;
   };
@@ -178,7 +185,8 @@ export function DocumentEditorPage() {
       const token = getCmsToken();
       const response = await fetch(`${CMS_API}/v1/admin/documents/${documentId}/publish`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ expectedRevision: saved.currentRevision }),
       });
       const result = (await response.json().catch(() => ({}))) as { document?: DocumentData; error?: string; issues?: string[] };
       if (!response.ok || !result.document) {
@@ -265,7 +273,14 @@ export function DocumentEditorPage() {
         </div>
       </div>
 
-      {error && <div className="admin-card" style={{ marginBottom: '1rem', color: '#991b1b', fontSize: '0.85rem' }}>{error}</div>}
+      {error && <div className="admin-card" style={{ marginBottom: '1rem', color: '#991b1b', fontSize: '0.85rem' }}>
+        {error}
+        {revisionConflict && (
+          <button className="admin-btn admin-btn-secondary" style={{ marginLeft: '0.75rem' }} type="button" onClick={() => window.location.reload()}>
+            Reload latest revision
+          </button>
+        )}
+      </div>}
 
       {!readOnly && (
         <StructuredFields

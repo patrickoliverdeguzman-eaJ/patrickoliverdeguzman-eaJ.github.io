@@ -290,6 +290,14 @@ function validateSlug(value: unknown): string {
   return slug;
 }
 
+function asOptionalRevision(value: unknown): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isInteger(value) || (value as number) < 1) {
+    throw new HttpError(400, 'Expected revision must be a positive whole number.', 'invalid_input');
+  }
+  return value as number;
+}
+
 function validateAdvancedStyles(value: unknown): void {
   if (value === undefined) return;
   if (!isRecord(value) || Object.keys(value).length > BUILDER_ADVANCED_STYLE_KEYS.size) {
@@ -750,6 +758,21 @@ async function getDocument(id: string, env: CmsEnv): Promise<DocumentRow> {
   return document;
 }
 
+async function getDocumentsByIds(ids: readonly string[], env: CmsEnv): Promise<DocumentRow[]> {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => '?').join(', ');
+  const result = await env.CMS_DB.prepare(
+    `SELECT id, type, slug, title, status, data_json, published_data_json,
+      current_revision, published_revision, sort_order, created_at, updated_at, published_at, scheduled_at
+     FROM cms_documents WHERE id IN (${placeholders})`,
+  ).bind(...ids).all<DocumentRow>();
+  const byId = new Map(result.results.map((document) => [document.id, document]));
+  return ids.flatMap((id) => {
+    const document = byId.get(id);
+    return document ? [document] : [];
+  });
+}
+
 function isUniqueError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('UNIQUE constraint failed');
 }
@@ -976,23 +999,36 @@ async function updateDocument(id: string, request: Request, user: CmsUser, env: 
   const slug = body.slug === undefined ? existing.slug : validateSlug(body.slug);
   const data = body.data === undefined ? { serialized: existing.data_json } : parseData(body.data, existing.type);
   const note = asOptionalString(body.note, 240);
-  const revision = existing.current_revision + 1;
+  const expectedRevision = asOptionalRevision(body.expectedRevision) ?? existing.current_revision;
+  if (expectedRevision !== existing.current_revision) {
+    throw new HttpError(409, 'This entry changed after you opened it. Reload it before saving so newer work is not overwritten.', 'revision_conflict');
+  }
+  const revision = expectedRevision + 1;
   const updatedAt = now();
 
   try {
-    await env.CMS_DB.batch([
+    const results = await env.CMS_DB.batch([
       env.CMS_DB.prepare(
         `UPDATE cms_documents
          SET title = ?, slug = ?, data_json = ?, current_revision = ?, updated_by = ?, updated_at = ?
-         WHERE id = ?`,
-      ).bind(title, slug, data.serialized, revision, user.id, updatedAt, id),
+         WHERE id = ? AND current_revision = ?`,
+      ).bind(title, slug, data.serialized, revision, user.id, updatedAt, id, expectedRevision),
       env.CMS_DB.prepare(
         `INSERT INTO cms_document_revisions (
           id, document_id, revision_number, title, slug, data_json, note, created_by, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(crypto.randomUUID(), id, revision, title, slug, data.serialized, note ?? 'Draft updated', user.id, updatedAt),
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE changes() = 1`,
+      ).bind(
+        crypto.randomUUID(), id, revision, title, slug, data.serialized,
+        note ?? 'Draft updated', user.id, updatedAt,
+      ),
     ]);
+    if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+      throw new HttpError(409, 'This entry changed while you were saving it. Reload it before trying again.', 'revision_conflict');
+    }
   } catch (error) {
+    if (error instanceof HttpError) throw error;
     if (isUniqueError(error)) throw new HttpError(409, 'This content type already uses that slug.', 'slug_in_use');
     throw error;
   }
@@ -1001,22 +1037,32 @@ async function updateDocument(id: string, request: Request, user: CmsUser, env: 
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
 
-async function publishDocument(id: string, user: CmsUser, env: CmsEnv): Promise<Response> {
+async function publishDocument(id: string, request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
   const document = await getDocument(id, env);
   if (document.status === 'archived') {
     throw new HttpError(409, 'Restore this archived entry before publishing it.', 'archived');
   }
+  const body = request.headers.get('content-type')?.toLowerCase().includes('application/json')
+    ? await readJson(request)
+    : {};
+  const expectedRevision = asOptionalRevision(body.expectedRevision) ?? document.current_revision;
+  if (expectedRevision !== document.current_revision) {
+    throw new HttpError(409, 'This entry changed after you opened it. Reload it before publishing.', 'revision_conflict');
+  }
   assertPublishable(document);
 
   const publishedAt = now();
-  await env.CMS_DB.prepare(
+  const result = await env.CMS_DB.prepare(
     `UPDATE cms_documents
      SET status = 'published', published_data_json = data_json, published_revision = current_revision,
        published_by = ?, published_at = ?, scheduled_at = NULL, updated_at = ?
-     WHERE id = ?`,
+     WHERE id = ? AND current_revision = ? AND status != 'archived'`,
   )
-    .bind(user.id, publishedAt, publishedAt, id)
-      .run();
+    .bind(user.id, publishedAt, publishedAt, id, expectedRevision)
+    .run();
+  if (Number(result.meta.changes ?? 0) !== 1) {
+    throw new HttpError(409, 'This entry changed while it was being published. Reload it and publish the latest revision.', 'revision_conflict');
+  }
   await logAudit(env, { userId: user.id, action: 'document.publish', resourceType: 'document', resourceId: id, detail: document.title });
   return json({ document: formatDocument(await getDocument(id, env)) });
 }
@@ -1296,6 +1342,135 @@ async function validateDocumentForPublish(id: string, env: CmsEnv): Promise<Resp
   return json({ valid: true });
 }
 
+async function publishDocumentBatch(request: Request, user: CmsUser, env: CmsEnv): Promise<Response> {
+  const body = await readJson(request);
+  if (!Array.isArray(body.documents) || body.documents.length < 1 || body.documents.length > 100) {
+    throw new HttpError(400, 'Provide 1 to 100 documents to publish.', 'invalid_input');
+  }
+
+  const requested = body.documents.map((entry) => {
+    if (!isRecord(entry)) throw new HttpError(400, 'Each document must include an id and expected revision.', 'invalid_input');
+    const id = asString(entry.id, 'Document id', 120);
+    const expectedRevision = asOptionalRevision(entry.expectedRevision);
+    if (!expectedRevision) throw new HttpError(400, 'Each document must include an expected revision.', 'invalid_input');
+    return { id, expectedRevision };
+  });
+  if (new Set(requested.map((entry) => entry.id)).size !== requested.length) {
+    throw new HttpError(400, 'A document can only appear once in a publishing batch.', 'invalid_input');
+  }
+
+  const documents = await getDocumentsByIds(requested.map((entry) => entry.id), env);
+  if (documents.length !== requested.length) {
+    throw new HttpError(404, 'One or more documents were not found.', 'not_found');
+  }
+
+  const validationIssues: string[] = [];
+  for (const [index, document] of documents.entries()) {
+    if (document.status === 'archived') {
+      validationIssues.push(`${document.title}: restore this archived entry before publishing it.`);
+      continue;
+    }
+    if (document.current_revision !== requested[index].expectedRevision) {
+      throw new HttpError(409, `${document.title} changed after the page was opened. Reload before publishing so the newer revision is preserved.`, 'revision_conflict');
+    }
+    validationIssues.push(...publishIssues(document).map((issue) => `${document.title}: ${issue}`));
+  }
+  if (validationIssues.length) {
+    throw new HttpError(
+      422,
+      `Fix ${validationIssues.length} publishing issue${validationIssues.length === 1 ? '' : 's'} before this page can go live.`,
+      'publish_validation_failed',
+      validationIssues.slice(0, 40),
+    );
+  }
+
+  const publishedAt = now();
+  const ids = requested.map((entry) => entry.id);
+  const idPlaceholders = ids.map(() => '?').join(', ');
+  const revisionConditions = requested.map(() => '(id = ? AND current_revision = ? AND status != \'archived\')').join(' OR ');
+  const result = await env.CMS_DB.prepare(
+    `UPDATE cms_documents
+     SET status = 'published', published_data_json = data_json, published_revision = current_revision,
+       published_by = ?, published_at = ?, scheduled_at = NULL, updated_at = ?
+     WHERE id IN (${idPlaceholders})
+       AND (SELECT COUNT(*) FROM cms_documents WHERE ${revisionConditions}) = ?`,
+  ).bind(
+    user.id,
+    publishedAt,
+    publishedAt,
+    ...ids,
+    ...requested.flatMap((entry) => [entry.id, entry.expectedRevision]),
+    requested.length,
+  ).run();
+
+  if (Number(result.meta.changes ?? 0) !== requested.length) {
+    throw new HttpError(409, 'The page changed while it was being published. No part of the page was published; reload and try again.', 'revision_conflict');
+  }
+
+  for (const document of documents) {
+    await logAudit(env, {
+      userId: user.id,
+      action: 'document.publish.batch',
+      resourceType: 'document',
+      resourceId: document.id,
+      detail: document.title,
+    });
+  }
+  const published = await getDocumentsByIds(ids, env);
+  return json({ documents: published.map(formatDocument), publishedAt });
+}
+
+async function contentHealth(env: CmsEnv): Promise<Response> {
+  const result = await env.CMS_DB.prepare(
+    `SELECT id, type, slug, title, status, data_json, published_data_json,
+      current_revision, published_revision, sort_order, created_at, updated_at, published_at, scheduled_at
+     FROM cms_documents ORDER BY updated_at DESC LIMIT 100`,
+  ).all<DocumentRow>();
+
+  let published = 0;
+  let drafts = 0;
+  let archived = 0;
+  let scheduled = 0;
+  let unpublishedChanges = 0;
+  const items: JsonRecord[] = [];
+  for (const document of result.results) {
+    if (document.status === 'published') published += 1;
+    if (document.status === 'draft') drafts += 1;
+    if (document.status === 'archived') archived += 1;
+    if (document.scheduled_at) scheduled += 1;
+    const changedSincePublish = document.published_revision !== null && document.published_revision !== document.current_revision;
+    if (changedSincePublish) unpublishedChanges += 1;
+    const issues = document.status === 'archived' ? [] : publishIssues(document);
+    if (issues.length || changedSincePublish || document.scheduled_at) {
+      items.push({
+        id: document.id,
+        type: document.type,
+        slug: document.slug,
+        title: document.title,
+        status: document.status,
+        currentRevision: document.current_revision,
+        publishedRevision: document.published_revision,
+        scheduledAt: document.scheduled_at,
+        changedSincePublish,
+        issues,
+      });
+    }
+  }
+
+  return json({
+    summary: {
+      total: result.results.length,
+      published,
+      drafts,
+      archived,
+      scheduled,
+      unpublishedChanges,
+      blocked: items.filter((item) => Array.isArray(item.issues) && item.issues.length > 0).length,
+    },
+    items,
+  });
+}
+
 async function listRevisions(id: string, env: CmsEnv): Promise<Response> {
   await getDocument(id, env);
   const revisions = await env.CMS_DB.prepare(
@@ -1329,16 +1504,18 @@ async function restoreRevision(
   const nextRevision = document.current_revision + 1;
   const updatedAt = now();
   try {
-    await env.CMS_DB.batch([
+    const results = await env.CMS_DB.batch([
       env.CMS_DB.prepare(
         `UPDATE cms_documents
          SET title = ?, slug = ?, data_json = ?, current_revision = ?, updated_by = ?, updated_at = ?
-         WHERE id = ?`,
-      ).bind(revision.title, revision.slug, revision.data_json, nextRevision, user.id, updatedAt, id),
+         WHERE id = ? AND current_revision = ?`,
+      ).bind(revision.title, revision.slug, revision.data_json, nextRevision, user.id, updatedAt, id, document.current_revision),
       env.CMS_DB.prepare(
         `INSERT INTO cms_document_revisions (
           id, document_id, revision_number, title, slug, data_json, note, created_by, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+        WHERE changes() = 1`,
       ).bind(
         crypto.randomUUID(),
         id,
@@ -1351,7 +1528,11 @@ async function restoreRevision(
         updatedAt,
       ),
     ]);
+    if (Number(results[0]?.meta.changes ?? 0) !== 1) {
+      throw new HttpError(409, 'This entry changed while the revision was being restored. Reload it and try again.', 'revision_conflict');
+    }
   } catch (error) {
+    if (error instanceof HttpError) throw error;
     if (isUniqueError(error)) throw new HttpError(409, 'That revision conflicts with an existing slug.', 'slug_in_use');
     throw error;
   }
@@ -1877,6 +2058,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
   const user = await requireUser(request, env);
   if (adminRoute[0] === 'me' && request.method === 'GET') return json({ user: formatUser(user) });
   if (adminRoute[0] === 'change-password' && request.method === 'POST') return changePassword(request, user, env);
+  if (adminRoute[0] === 'content-health' && request.method === 'GET') return contentHealth(env);
 
   if (adminRoute[0] === 'users') {
     requireRole(user, 'admin');
@@ -1912,6 +2094,10 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
       requireRole(user, 'admin', 'editor');
       return reorderDocuments(request, user, env);
     }
+    if (documentId === 'publish-batch' && adminRoute.length === 2 && request.method === 'POST') {
+      requireRole(user, 'admin', 'editor');
+      return publishDocumentBatch(request, user, env);
+    }
     if (adminRoute.length === 2 && request.method === 'GET') {
       if (!documentId) throw new HttpError(404, 'Route was not found.', 'not_found');
       return json({ document: formatDocument(await getDocument(documentId, env)) });
@@ -1926,7 +2112,7 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     if (adminRoute.length === 2 && request.method === 'PATCH') return updateDocument(documentId, request, user, env);
     if (adminRoute.length === 2 && request.method === 'DELETE') return archiveDocument(documentId, user, env);
     if (adminRoute[2] === 'validate-publish' && request.method === 'POST') return validateDocumentForPublish(documentId, env);
-    if (adminRoute[2] === 'publish' && request.method === 'POST') return publishDocument(documentId, user, env);
+    if (adminRoute[2] === 'publish' && request.method === 'POST') return publishDocument(documentId, request, user, env);
     if (adminRoute[2] === 'unpublish' && request.method === 'POST') return unpublishDocument(documentId, user, env);
     if (adminRoute[2] === 'schedule' && request.method === 'POST') return scheduleDocument(documentId, request, user, env);
     if (adminRoute[2] === 'restore-archived' && request.method === 'POST') return restoreArchivedDocument(documentId, user, env);

@@ -44,19 +44,41 @@ interface AuditResponse {
   audit: AuditEntry[];
 }
 
+interface ContentHealthResponse {
+  summary: {
+    total: number;
+    published: number;
+    drafts: number;
+    archived: number;
+    scheduled: number;
+    unpublishedChanges: number;
+    blocked: number;
+  };
+  items: Array<{
+    id: string;
+    title: string;
+    type: string;
+    status: string;
+    changedSincePublish: boolean;
+    scheduledAt: string | null;
+    issues: string[];
+  }>;
+}
+
 export function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [recentDocs, setRecentDocs] = useState<DocListResponse['documents']>(
     [],
   );
   const [activity, setActivity] = useState<AuditEntry[]>([]);
+  const [contentHealth, setContentHealth] = useState<ContentHealthResponse | null>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
 
   useEffect(() => {
     const token = getCmsToken();
     const headers = { authorization: `Bearer ${token}` };
-    Promise.all([
+    void Promise.all([
       fetch(`${CMS_API}/v1/admin/documents?limit=100&status=published`, {
         headers,
       })
@@ -74,16 +96,19 @@ export function AdminDashboard() {
       fetch(`${CMS_API}/v1/admin/audit?limit=8`, { headers })
         .then((r) => r.json() as Promise<AuditResponse>)
         .catch(() => ({ audit: [] })),
-    ]).then(([publishedRes, draftRes, mediaRes, docsRes, auditRes]) => {
+      fetch(`${CMS_API}/v1/admin/content-health`, { headers })
+        .then((r) => r.ok ? r.json() as Promise<ContentHealthResponse> : null)
+        .catch(() => null),
+    ]).then(([publishedRes, draftRes, mediaRes, docsRes, auditRes, healthRes]) => {
       setStats({
-        totalDocuments:
-          publishedRes.documents.length + draftRes.documents.length || 0,
-        publishedDocuments: publishedRes.documents.length || 0,
-        draftDocuments: draftRes.documents.length || 0,
+        totalDocuments: healthRes?.summary.total ?? (publishedRes.documents.length + draftRes.documents.length),
+        publishedDocuments: healthRes?.summary.published ?? publishedRes.documents.length,
+        draftDocuments: healthRes?.summary.drafts ?? draftRes.documents.length,
         totalMedia: mediaRes.media.length || 0,
       });
       setRecentDocs(docsRes.documents ?? []);
       setActivity(auditRes.audit ?? []);
+      setContentHealth(healthRes);
     });
   }, []);
 
@@ -234,6 +259,39 @@ export function AdminDashboard() {
           <ArrowUpRight size={20} color="#820040" />
         </div>
       </Link>
+
+      {contentHealth && (
+        <div className="admin-card" style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap' }}>
+            <div>
+              <div className="stat-label">Content health</div>
+              <h2 style={{ margin: '0.35rem 0 0', fontSize: '1rem' }}>
+                {contentHealth.summary.blocked === 0
+                  ? 'All active content passes publishing checks'
+                  : `${contentHealth.summary.blocked} ${contentHealth.summary.blocked === 1 ? 'entry needs' : 'entries need'} attention`}
+              </h2>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span className="admin-badge admin-badge-draft">{contentHealth.summary.unpublishedChanges} unpublished changes</span>
+              <span className="admin-badge admin-badge-published">{contentHealth.summary.scheduled} scheduled</span>
+            </div>
+          </div>
+          {contentHealth.items.some((item) => item.issues.length > 0) && (
+            <div style={{ marginTop: '1rem', display: 'grid', gap: '0.6rem' }}>
+              {contentHealth.items.filter((item) => item.issues.length > 0).slice(0, 5).map((item) => (
+                <Link
+                  key={item.id}
+                  href={adminPath(`/admin/documents/edit?id=${item.id}`)}
+                  style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', padding: '0.75rem', border: '1px solid rgba(130,0,64,0.12)', borderRadius: '0.5rem', color: 'inherit', textDecoration: 'none' }}
+                >
+                  <span><strong>{item.title}</strong><br /><small style={{ color: '#735568' }}>{item.issues[0]}</small></span>
+                  <ArrowUpRight size={16} color="#820040" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {stats?.totalDocuments === 0 && (
         <div className="admin-card" style={{ marginBottom: '1.5rem' }}>

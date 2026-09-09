@@ -96,6 +96,8 @@ type CmsDocument = {
   status: 'draft' | 'published' | 'archived';
   data: Record<string, unknown>;
   publishedData: Record<string, unknown> | null;
+  currentRevision: number;
+  publishedRevision: number | null;
   updatedAt: string;
   scheduledAt?: string | null;
 };
@@ -565,6 +567,7 @@ export function VisualEditor() {
     'loading' | 'saved' | 'saving' | 'publishing' | 'error'
   >('loading');
   const [message, setMessage] = useState('Loading editor…');
+  const [revisionConflict, setRevisionConflict] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [layersOpen, setLayersOpen] = useState(true);
   const [initializing, setInitializing] = useState(false);
@@ -585,6 +588,7 @@ export function VisualEditor() {
   const [scheduleAt, setScheduleAt] = useState('');
   const canvasRef = useRef<HTMLDivElement>(null);
   const documentSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const documentRevisionRef = useRef<Map<string, number>>(new Map());
   const builderSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
@@ -593,6 +597,7 @@ export function VisualEditor() {
   const queueDocumentSave = useCallback((document: CmsDocument, note: string) => {
     const save = documentSaveQueueRef.current.then(async () => {
       const token = getCmsToken();
+      const expectedRevision = documentRevisionRef.current.get(document.id) ?? document.currentRevision;
       const response = await fetch(`${CMS_API}/v1/admin/documents/${document.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
@@ -601,10 +606,19 @@ export function VisualEditor() {
           slug: document.slug,
           data: document.data,
           note,
+          expectedRevision,
         }),
       });
-      const result = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) throw new Error(result.error ?? `Could not save ${document.title}.`);
+      const result = (await response.json().catch(() => ({}))) as { document?: CmsDocument; error?: string; code?: string };
+      if (!response.ok || !result.document) {
+        if (result.code === 'revision_conflict') setRevisionConflict(true);
+        throw new Error(result.error ?? `Could not save ${document.title}.`);
+      }
+      setRevisionConflict(false);
+      documentRevisionRef.current.set(document.id, result.document.currentRevision);
+      setDocuments((current) => current.map((entry) => entry.id === document.id
+        ? { ...entry, currentRevision: result.document!.currentRevision, updatedAt: result.document!.updatedAt }
+        : entry));
     });
     // Keep the queue usable after a failed request while returning the original
     // promise to the caller so it can show the error and preserve dirty state.
@@ -633,7 +647,9 @@ export function VisualEditor() {
         throw new Error(
           documentsBody.error ?? 'The CMS documents could not be loaded.',
         );
-      setDocuments(documentsBody.documents ?? []);
+      const loadedDocuments = documentsBody.documents ?? [];
+      documentRevisionRef.current = new Map(loadedDocuments.map((document) => [document.id, document.currentRevision]));
+      setDocuments(loadedDocuments);
       setMedia(mediaBody.media ?? []);
       setStatus('saved');
       setMessage(
@@ -940,18 +956,41 @@ export function VisualEditor() {
     }
     setStatus('publishing');
     setMessage('Setting homepage…');
-    const token = getCmsToken();
-    const data = { ...globalSettings.data, homepageSlug: activeCustomPage.slug };
-    const update = await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ title: globalSettings.title, slug: globalSettings.slug, data, note: `Set ${activeCustomPage.slug} as homepage` }) });
-    const publish = update.ok ? await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}/publish`, { method: 'POST', headers: { authorization: `Bearer ${token}` } }) : update;
-    if (!update.ok || !publish.ok) {
+    try {
+      const token = getCmsToken();
+      const data = { ...globalSettings.data, homepageSlug: activeCustomPage.slug };
+      const update = await fetch(`${CMS_API}/v1/admin/documents/${globalSettings.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          title: globalSettings.title,
+          slug: globalSettings.slug,
+          data,
+          note: `Set ${activeCustomPage.slug} as homepage`,
+          expectedRevision: documentRevisionRef.current.get(globalSettings.id) ?? globalSettings.currentRevision,
+        }),
+      });
+      const updateResult = (await update.json().catch(() => ({}))) as { document?: CmsDocument; error?: string };
+      if (!update.ok || !updateResult.document) throw new Error(updateResult.error ?? 'The homepage setting could not be saved.');
+      documentRevisionRef.current.set(globalSettings.id, updateResult.document.currentRevision);
+      const publish = await fetch(`${CMS_API}/v1/admin/documents/publish-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ documents: [{ id: globalSettings.id, expectedRevision: updateResult.document.currentRevision }] }),
+      });
+      const publishResult = (await publish.json().catch(() => ({}))) as { documents?: CmsDocument[]; error?: string; issues?: string[] };
+      if (!publish.ok || !publishResult.documents?.[0]) {
+        throw new Error([publishResult.error ?? 'The homepage setting could not be published.', ...(publishResult.issues ?? [])].join(' '));
+      }
+      const publishedSettings = publishResult.documents[0];
+      documentRevisionRef.current.set(globalSettings.id, publishedSettings.currentRevision);
+      setDocuments((current) => current.map((document) => document.id === globalSettings.id ? publishedSettings : document));
+      setStatus('saved');
+      setMessage(`${activeCustomPage.title} is now the homepage`);
+    } catch (error) {
       setStatus('error');
-      setMessage('The homepage setting could not be published.');
-      return;
+      setMessage(error instanceof Error ? error.message : 'The homepage setting could not be published.');
     }
-    setDocuments((current) => current.map((document) => document.id === globalSettings.id ? { ...document, data, publishedData: structuredClone(data), status: 'published' } : document));
-    setStatus('saved');
-    setMessage(`${activeCustomPage.title} is now the homepage`);
   };
 
   const addBuilderElement = async (type: BuilderNodeType) => {
@@ -1247,12 +1286,9 @@ export function VisualEditor() {
   const publishPage = async () => {
     const saved = await saveDrafts();
     if (!saved) return;
-    // Validate/publish the page canvas before its supporting records. This
-    // prevents a rejected page (for example, one with placeholder blocks) from
-    // partially publishing related entries first.
-    const ids = [...pageDocuments]
+    const publishDocuments = [...pageDocuments]
       .sort((left, right) => Number(right.type === 'builder_page') - Number(left.type === 'builder_page'))
-      .map((document) => document.id);
+    const ids = publishDocuments.map((document) => document.id);
     if (!ids.length) {
       setStatus('error');
       setMessage('Import the existing site before publishing this page.');
@@ -1262,44 +1298,29 @@ export function VisualEditor() {
     setMessage('Publishing…');
     try {
       const token = getCmsToken();
-      for (const id of ids) {
-        const response = await fetch(`${CMS_API}/v1/admin/documents/${id}/validate-publish`, {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}` },
-        });
-        const result = (await response.json().catch(() => ({}))) as { error?: string; issues?: string[] };
-        if (!response.ok) {
-          throw new Error([result.error ?? 'The page could not be published.', ...(result.issues ?? [])].join(' '));
-        }
+      const response = await fetch(`${CMS_API}/v1/admin/documents/publish-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          documents: publishDocuments.map((document) => ({
+            id: document.id,
+            expectedRevision: documentRevisionRef.current.get(document.id) ?? document.currentRevision,
+          })),
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        documents?: CmsDocument[];
+        error?: string;
+        issues?: string[];
+      };
+      if (!response.ok || !result.documents) {
+        throw new Error([result.error ?? 'The page could not be published.', ...(result.issues ?? [])].join(' '));
       }
-      for (const id of ids) {
-        const response = await fetch(
-          `${CMS_API}/v1/admin/documents/${id}/publish`,
-          {
-            method: 'POST',
-            headers: { authorization: `Bearer ${token}` },
-          },
-        );
-        const result = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          issues?: string[];
-        };
-        if (!response.ok)
-          throw new Error([result.error ?? 'The page could not be published.', ...(result.issues ?? [])].join(' '));
-      }
-      setDocuments((current) =>
-        current.map((document) =>
-          ids.includes(document.id)
-            ? {
-                ...document,
-                status: 'published',
-                publishedData: structuredClone(document.data),
-              }
-            : document,
-        ),
-      );
+      const publishedById = new Map(result.documents.map((document) => [document.id, document]));
+      result.documents.forEach((document) => documentRevisionRef.current.set(document.id, document.currentRevision));
+      setDocuments((current) => current.map((document) => publishedById.get(document.id) ?? document));
       setStatus('saved');
-      setMessage('Published to the live site');
+      setMessage(`Published ${result.documents.length} page record${result.documents.length === 1 ? '' : 's'} to the live site`);
     } catch (error) {
       setStatus('error');
       setMessage(
@@ -1690,6 +1711,11 @@ export function VisualEditor() {
           {status === 'saving' || status === 'publishing' ? '● ' : ''}
           {message}
         </div>
+        {revisionConflict && (
+          <button className="admin-btn admin-btn-secondary" type="button" onClick={() => window.location.reload()}>
+            Reload latest revision
+          </button>
+        )}
         <div className="visual-toolbar-actions">
           <button
             className="admin-btn admin-btn-ghost"
