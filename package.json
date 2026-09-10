@@ -50,7 +50,7 @@
     "oxlint-tsgolint": "7.0.2001",
     "postcss": "8.5.28",
     "tailwindcss": "4.2.1",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "wrangler": "^4.130.0"
   },
   "overrides": {
