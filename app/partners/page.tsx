@@ -1,21 +1,16 @@
 import type { Metadata } from 'next';
 import { PartnersPage } from '@/components/partners-page';
+import { cmsPageMetadata } from '@/lib/cms-page-metadata';
+import { cmsPageSnapshot, loadPartnersContent } from '@/lib/site-content';
 
 export const dynamic = 'force-static';
 
-export const metadata: Metadata = {
-  title: 'Partners | INFOStorage',
-  description: 'Explore the INFOStorage technology partner ecosystem.',
-  openGraph: {
-    title: 'Partners | INFOStorage',
-    description: 'Explore the INFOStorage technology partner ecosystem.',
-    images: [],
-  },
-  twitter: {
-    images: [],
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const content = await loadPartnersContent({ requireCms: true });
+  return cmsPageMetadata(content.builder, content.builderTitle);
+}
 
-export default function PartnersPageRoute() {
-  return <PartnersPage />;
+export default async function PartnersPageRoute() {
+  const content = await loadPartnersContent({ requireCms: true });
+  return <PartnersPage initialContent={cmsPageSnapshot(content)} />;
 }

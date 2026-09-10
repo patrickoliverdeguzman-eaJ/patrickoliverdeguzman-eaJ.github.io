@@ -1,13 +1,12 @@
 import { CMS_API } from './cms-api';
-import { hasBuilderContent, normaliseBuilderPage, reindexBuilderPage, type BuilderNode, type BuilderNodeType, type BuilderPage } from './page-builder';
+import { hasBuilderContent, hasBuilderNodeType, normaliseBuilderPage, reindexBuilderPage, type BuilderNode, type BuilderNodeType, type BuilderPage } from './page-builder';
 
 // Content layer for the public site.
 //
-// The public pages keep their exact markup and styling. This module provides
-// the current hardcoded copy as defaults, then overlays values published in
-// the CMS (Workers + D1). When the CMS is unreachable or a document is still
-// a draft, the page silently falls back to the defaults, so missing optional
-// content can never crash the page or change the design.
+// Published routes call these loaders in strict mode. Their first render is
+// therefore generated from Workers + D1, and a release cannot silently ship a
+// stale frontend copy when required CMS content is missing. The defaults below
+// remain useful inside the editor and for its page-creation blueprints only.
 //
 // Security: CMS values are only ever rendered as React text nodes (which
 // React escapes). Nothing from the CMS is injected with
@@ -202,27 +201,40 @@ interface ContentDocResponse {
   document: PublishedDoc;
 }
 
+export type CmsLoadOptions = {
+  requireCms?: boolean;
+};
+
+export type PublishedPageSlug = 'about' | 'solutions' | 'services' | 'contact';
+
 function str(value: unknown, fallback: string): string {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
 async function fetchJson<T>(path: string): Promise<T | null> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 6000);
+  const timer = globalThis.setTimeout(() => controller.abort(), 6000);
   try {
-    const res = await fetch(`${CMS_API}${path}`, { signal: controller.signal });
+    const res = await fetch(`${CMS_API}${path}`, {
+      signal: controller.signal,
+      cache: typeof window === 'undefined' ? 'force-cache' : 'no-store',
+    });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
     return null;
   } finally {
-    window.clearTimeout(timer);
+    globalThis.clearTimeout(timer);
   }
 }
 
-export async function fetchPublishedDoc(type: string, slug: string): Promise<Record<string, unknown> | null> {
+export async function fetchPublishedDocument(type: string, slug: string): Promise<PublishedDoc | null> {
   const data = await fetchJson<ContentDocResponse>(`/v1/content/${encodeURIComponent(type)}/${encodeURIComponent(slug)}`);
-  return data?.document?.data ?? null;
+  return data?.document ?? null;
+}
+
+export async function fetchPublishedDoc(type: string, slug: string): Promise<Record<string, unknown> | null> {
+  return (await fetchPublishedDocument(type, slug))?.data ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -351,6 +363,7 @@ export interface HomeContent {
   footer: { address: string; copyright: string };
   /** Optional, schema-defined sections added through the visual builder. */
   builder?: BuilderPage;
+  builderTitle?: string;
 }
 
 export const DEFAULT_HOME: HomeContent = {
@@ -446,6 +459,7 @@ export interface PartnersContent {
   clientsHead: { kicker: string; heading: string; body: string };
   /** Optional, schema-defined sections added through the visual builder. */
   builder?: BuilderPage;
+  builderTitle?: string;
 }
 
 export const DEFAULT_PARTNERS: PartnersContent = {
@@ -610,19 +624,91 @@ function siteFromDoc(data: Record<string, unknown> | null): Partial<HomeContent[
   };
 }
 
-export async function loadHomeContent(): Promise<HomeContent> {
+export type RenderableHomeContent = HomeContent & { builder: BuilderPage; builderTitle: string };
+export type RenderablePartnersContent = PartnersContent & { builder: BuilderPage; builderTitle: string };
+export type CmsSiteSnapshot = Pick<HomeContent, 'design' | 'navItems' | 'headerCta' | 'site' | 'footer'>;
+export type CmsPageSnapshot = CmsSiteSnapshot & { builder: BuilderPage; builderTitle: string };
+
+export function cmsSiteSnapshot(content: HomeContent | PartnersContent): CmsSiteSnapshot {
+  return {
+    design: content.design,
+    navItems: content.navItems,
+    headerCta: content.headerCta,
+    site: content.site,
+    footer: content.footer,
+  };
+}
+
+export function cmsPageSnapshot(content: RenderableHomeContent | RenderablePartnersContent): CmsPageSnapshot {
+  return { ...cmsSiteSnapshot(content), builder: content.builder, builderTitle: content.builderTitle };
+}
+
+function cmsContentError(slugs: string[]): Error {
+  return new Error(`Required published CMS content is unavailable: ${slugs.join(', ')}`);
+}
+
+function assertCmsChrome(settings: Record<string, unknown>, nav: Record<string, unknown>): void {
+  const requiredSettings = [
+    'companyName', 'phone', 'phoneHref', 'address', 'addressUrl', 'logo',
+    'logoLight', 'logoDark', 'logoMobile', 'logoWidth', 'logoMobileWidth',
+    'logoAlignment', 'logoSpacing', 'favicon', 'appIcon', 'copyright', 'homepageSlug',
+  ];
+  const missing = requiredSettings.filter((key) => typeof settings[key] !== 'string' || !(settings[key] as string).trim());
+  if (!isRecord(settings.design)) missing.push('design');
+  else {
+    for (const key of Object.keys(DEFAULT_DESIGN_SYSTEM)) {
+      if (!(key in settings.design)) missing.push(`design.${key}`);
+    }
+  }
+  if (!navFromDoc(nav)) missing.push('navigation.items');
+  if (typeof nav.ctaLabel !== 'string' || !nav.ctaLabel.trim()) missing.push('navigation.ctaLabel');
+  if (typeof nav.ctaHref !== 'string' || !nav.ctaHref.trim()) missing.push('navigation.ctaHref');
+  if (missing.length) throw cmsContentError(missing.map((key) => `site_settings/${key}`));
+}
+
+function assertCmsPage(page: BuilderPage, slug: string): void {
+  const missing: string[] = [];
+  if (!hasBuilderContent(page)) missing.push('empty page tree');
+  if (!hasBuilderNodeType(page, 'site_header')) missing.push('site header');
+  if (!hasBuilderNodeType(page, 'site_footer')) missing.push('site footer');
+  if (!page.settings.seoTitle.trim()) missing.push('SEO title');
+  if (!page.settings.seoDescription.trim()) missing.push('SEO description');
+  if (missing.length) throw cmsContentError(missing.map((value) => `builder_page/${slug} (${value})`));
+}
+
+export async function loadHomeContent(options: CmsLoadOptions = {}): Promise<RenderableHomeContent> {
   const content: HomeContent = structuredClone(DEFAULT_HOME);
   try {
-    const [settings, nav, builder] =
+    const [settingsDoc, navDoc, builderDoc] =
       await Promise.all([
-        fetchPublishedDoc('site_settings', 'global'),
-        fetchPublishedDoc('navigation', 'main'),
-        fetchPublishedDoc('builder_page', 'home'),
+        fetchPublishedDocument('site_settings', 'global'),
+        fetchPublishedDocument('navigation', 'main'),
+        fetchPublishedDocument('builder_page', 'home'),
       ]);
+
+    if (options.requireCms) {
+      const missing = [
+        !settingsDoc && 'site_settings/global',
+        !navDoc && 'navigation/main',
+        !builderDoc && 'builder_page/home',
+      ].filter((value): value is string => Boolean(value));
+      if (missing.length) throw cmsContentError(missing);
+    }
+
+    const settings = settingsDoc?.data ?? null;
+    const nav = navDoc?.data ?? null;
+    const builder = builderDoc?.data ?? null;
+    if (options.requireCms && settings && nav) assertCmsChrome(settings, nav);
 
     if (builder) {
       const managedPage = normaliseBuilderPage(builder);
-      if (hasBuilderContent(managedPage)) content.builder = managedPage;
+      if (hasBuilderContent(managedPage)) {
+        if (options.requireCms) assertCmsPage(managedPage, 'home');
+        content.builder = managedPage;
+        content.builderTitle = builderDoc?.title ?? 'Home';
+      } else if (options.requireCms) {
+        throw cmsContentError(['builder_page/home (empty page tree)']);
+      }
     }
 
     const navItems = navFromDoc(nav);
@@ -640,32 +726,57 @@ export async function loadHomeContent(): Promise<HomeContent> {
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, v]) => v !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
     if (content.homepageSlug !== 'home') {
-      const homepage = await fetchPublishedDoc('builder_page', content.homepageSlug);
+      const homepage = await fetchPublishedDocument('builder_page', content.homepageSlug);
       if (homepage) {
-        const managedHomepage = normaliseBuilderPage(homepage);
-        if (hasBuilderContent(managedHomepage)) content.builder = managedHomepage;
+        const managedHomepage = normaliseBuilderPage(homepage.data);
+        if (hasBuilderContent(managedHomepage)) {
+          if (options.requireCms) assertCmsPage(managedHomepage, content.homepageSlug);
+          content.builder = managedHomepage;
+          content.builderTitle = homepage.title;
+        } else if (options.requireCms) {
+          throw cmsContentError([`builder_page/${content.homepageSlug} (empty page tree)`]);
+        }
+      } else if (options.requireCms) {
+        throw cmsContentError([`builder_page/${content.homepageSlug}`]);
       }
     }
-  } catch {
-    // Fall back to defaults; the page must never break.
+  } catch (error) {
+    if (options.requireCms) throw error;
   }
-  // The fallback exists only for an unavailable CMS. Published CMS page data
-  // always wins above; the public renderer never composes the former JSX page.
   content.builder ??= createHomeBuilderPage(content);
-  return content;
+  content.builderTitle ??= 'Home';
+  return content as RenderableHomeContent;
 }
 
-export async function loadPartnersContent(): Promise<PartnersContent> {
+export async function loadPartnersContent(options: CmsLoadOptions = {}): Promise<RenderablePartnersContent> {
   const content: PartnersContent = structuredClone(DEFAULT_PARTNERS);
   try {
-    const [settings, nav, builder] = await Promise.all([
-      fetchPublishedDoc('site_settings', 'global'),
-      fetchPublishedDoc('navigation', 'main'),
-      fetchPublishedDoc('builder_page', 'partners'),
+    const [settingsDoc, navDoc, builderDoc] = await Promise.all([
+      fetchPublishedDocument('site_settings', 'global'),
+      fetchPublishedDocument('navigation', 'main'),
+      fetchPublishedDocument('builder_page', 'partners'),
     ]);
+    if (options.requireCms) {
+      const missing = [
+        !settingsDoc && 'site_settings/global',
+        !navDoc && 'navigation/main',
+        !builderDoc && 'builder_page/partners',
+      ].filter((value): value is string => Boolean(value));
+      if (missing.length) throw cmsContentError(missing);
+    }
+    const settings = settingsDoc?.data ?? null;
+    const nav = navDoc?.data ?? null;
+    const builder = builderDoc?.data ?? null;
+    if (options.requireCms && settings && nav) assertCmsChrome(settings, nav);
     if (builder) {
       const managedPage = normaliseBuilderPage(builder);
-      if (hasBuilderContent(managedPage)) content.builder = managedPage;
+      if (hasBuilderContent(managedPage)) {
+        if (options.requireCms) assertCmsPage(managedPage, 'partners');
+        content.builder = managedPage;
+        content.builderTitle = builderDoc?.title ?? 'Partners';
+      } else if (options.requireCms) {
+        throw cmsContentError(['builder_page/partners (empty page tree)']);
+      }
     }
     const navItems = navFromDoc(nav);
     if (navItems) content.navItems = navItems;
@@ -679,9 +790,25 @@ export async function loadPartnersContent(): Promise<PartnersContent> {
     content.design = designSystemFromDoc(settings?.design);
     content.site = { ...content.site, ...Object.fromEntries(Object.entries(site).filter(([, value]) => value !== undefined)) };
     content.footer = { ...content.footer, address: content.site.address, copyright: copyright ?? content.footer.copyright };
-  } catch {
-    // Fall back to defaults.
+  } catch (error) {
+    if (options.requireCms) throw error;
   }
   content.builder ??= createPartnersBuilderPage(content);
-  return content;
+  content.builderTitle ??= 'Partners';
+  return content as RenderablePartnersContent;
+}
+
+export async function loadPublishedBuilderRoute(
+  slug: string,
+  options: CmsLoadOptions = {},
+): Promise<{ site: RenderableHomeContent; page: BuilderPage; title: string }> {
+  const [site, document] = await Promise.all([
+    loadHomeContent(options),
+    fetchPublishedDocument('builder_page', slug),
+  ]);
+  if (!document) throw cmsContentError([`builder_page/${slug}`]);
+  const page = normaliseBuilderPage(document.data);
+  if (!hasBuilderContent(page)) throw cmsContentError([`builder_page/${slug} (empty page tree)`]);
+  if (options.requireCms) assertCmsPage(page, slug);
+  return { site, page, title: document.title };
 }

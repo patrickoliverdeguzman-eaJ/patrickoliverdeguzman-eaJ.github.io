@@ -3,35 +3,38 @@
 import { type CSSProperties, useEffect, useState } from 'react';
 import SiteChatbot from '@/app/site-chatbot';
 import { CustomPageLayout } from '@/components/custom-page-layout';
-import { CONTENT_PAGES, type ContentPageSlug } from '@/lib/content-pages';
-import { hasBuilderContent, normaliseBuilderPage, type BuilderPage } from '@/lib/page-builder';
-import { DEFAULT_HOME, designVariables, fetchPublishedDoc, loadHomeContent, type HomeContent } from '@/lib/site-content';
+import type { BuilderPage } from '@/lib/page-builder';
+import { cmsSiteSnapshot, designVariables, loadPublishedBuilderRoute, type CmsSiteSnapshot, type PublishedPageSlug } from '@/lib/site-content';
 
-export function PublishedContentPage({ slug }: { slug: ContentPageSlug }) {
-  const definition = CONTENT_PAGES[slug];
-  const [site, setSite] = useState<HomeContent>(DEFAULT_HOME);
-  const [page, setPage] = useState<BuilderPage>(definition.page);
+type Props = {
+  slug: PublishedPageSlug;
+  title: string;
+  initialSite: CmsSiteSnapshot;
+  initialPage: BuilderPage;
+};
+
+export function PublishedContentPage({ slug, title, initialSite, initialPage }: Props) {
+  const [site, setSite] = useState(initialSite);
+  const [page, setPage] = useState(initialPage);
+  const [documentTitle, setDocumentTitle] = useState(title);
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      loadHomeContent(),
-      fetchPublishedDoc('builder_page', slug),
-    ]).then(([loadedSite, published]) => {
-      if (cancelled) return;
-      setSite(loadedSite);
-      if (published) {
-        const managedPage = normaliseBuilderPage(published);
-        if (hasBuilderContent(managedPage)) setPage(managedPage);
-      }
-    });
+    void loadPublishedBuilderRoute(slug, { requireCms: true })
+      .then((loaded) => {
+        if (cancelled) return;
+        setSite(cmsSiteSnapshot(loaded.site));
+        setPage(loaded.page);
+        setDocumentTitle(loaded.title);
+      })
+      .catch(() => { /* Keep the CMS snapshot embedded during the build. */ });
     return () => { cancelled = true; };
   }, [slug]);
 
   return <>
     <CustomPageLayout
       page={page}
-      title={definition.title}
+      title={documentTitle}
       chrome={{
         variant: 'partners',
         currentPath: `/${slug}`,

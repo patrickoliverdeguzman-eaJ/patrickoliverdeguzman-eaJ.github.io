@@ -1,16 +1,10 @@
 'use client';
 
 import { type CSSProperties, useEffect, useState } from 'react';
+import Link from 'next/link';
 import SiteChatbot from '@/app/site-chatbot';
 import { CustomPageLayout } from '@/components/custom-page-layout';
-import { CMS_API } from '@/lib/cms-api';
-import { normaliseBuilderPage, type BuilderPage } from '@/lib/page-builder';
-import { DEFAULT_HOME, designVariables, loadHomeContent, type HomeContent } from '@/lib/site-content';
-
-type PublishedBuilderDocument = {
-  title: string;
-  data: Record<string, unknown>;
-};
+import { designVariables, loadPublishedBuilderRoute } from '@/lib/site-content';
 
 function pageSlug(): string | null {
   const value = new URLSearchParams(window.location.search).get('page')?.toLowerCase() ?? '';
@@ -18,30 +12,20 @@ function pageSlug(): string | null {
 }
 
 export function CustomBuilderPage() {
-  const [site, setSite] = useState<HomeContent>(DEFAULT_HOME);
-  const [title, setTitle] = useState('New page');
-  const [page, setPage] = useState<BuilderPage | null>(null);
+  const [content, setContent] = useState<Awaited<ReturnType<typeof loadPublishedBuilderRoute>> | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing'>('loading');
 
   useEffect(() => {
     let cancelled = false;
     const slug = pageSlug();
     if (!slug) {
-      setState('missing');
+      queueMicrotask(() => { if (!cancelled) setState('missing'); });
       return;
     }
-    void Promise.all([
-      loadHomeContent(),
-      fetch(`${CMS_API}/v1/content/builder_page/${encodeURIComponent(slug)}`).then(async (response) => {
-        if (!response.ok) throw new Error('not_found');
-        return (await response.json()) as { document?: PublishedBuilderDocument };
-      }),
-    ])
-      .then(([home, response]) => {
-        if (cancelled || !response.document) return;
-        setSite(home);
-        setTitle(response.document.title);
-        setPage(normaliseBuilderPage(response.document.data));
+    void loadPublishedBuilderRoute(slug, { requireCms: true })
+      .then((loaded) => {
+        if (cancelled) return;
+        setContent(loaded);
         setState('ready');
       })
       .catch(() => {
@@ -55,18 +39,22 @@ export function CustomBuilderPage() {
   if (state === 'missing') {
     return (
       <main className="custom-page-missing">
-        <a href="/" className="brand">INFOStorage</a>
+        <Link href="/" className="brand">INFOStorage</Link>
         <h1>Page not found</h1>
         <p>This page is not published yet, or the address is incomplete.</p>
       </main>
     );
   }
 
+  if (!content) {
+    return <main className="custom-page-missing"><p>Loading published page…</p></main>;
+  }
+
   return (
     <>
-      <CustomPageLayout page={page ?? undefined} title={state === 'loading' ? 'Loading page…' : title}
-        chrome={{ variant: 'home', site: site.site, navItems: site.navItems, headerCta: site.headerCta, footer: site.footer }}
-        style={designVariables(site.design) as CSSProperties} />
+      <CustomPageLayout page={content.page} title={content.title}
+        chrome={{ variant: 'home', site: content.site.site, navItems: content.site.navItems, headerCta: content.site.headerCta, footer: content.site.footer }}
+        style={designVariables(content.site.design) as CSSProperties} />
       <SiteChatbot />
     </>
   );

@@ -3,14 +3,14 @@
 import { type CSSProperties, useEffect, useState } from 'react';
 import SiteChatbot from '@/app/site-chatbot';
 import { CmsSitePage } from '@/components/cms-site-page';
-import { cmsPageSnapshot, designVariables, loadPartnersContent, type CmsPageSnapshot } from '@/lib/site-content';
+import { cmsPageSnapshot, designVariables, loadHomeContent, type CmsPageSnapshot } from '@/lib/site-content';
 
-export function PartnersPage({ initialContent }: { initialContent: CmsPageSnapshot }) {
+export function HomePage({ initialContent }: { initialContent: CmsPageSnapshot }) {
   const [content, setContent] = useState(initialContent);
 
   useEffect(() => {
     let cancelled = false;
-    void loadPartnersContent({ requireCms: true })
+    void loadHomeContent({ requireCms: true })
       .then((loaded) => { if (!cancelled) setContent(cmsPageSnapshot(loaded)); })
       .catch(() => { /* Keep the CMS snapshot embedded during the build. */ });
     return () => { cancelled = true; };
@@ -18,9 +18,9 @@ export function PartnersPage({ initialContent }: { initialContent: CmsPageSnapsh
 
   return <>
     <CmsSitePage
-      kind="partners"
+      kind="home"
       page={content.builder}
-      chrome={{ variant: 'partners', currentPath: '/partners', navItems: content.navItems, headerCta: content.headerCta, site: content.site, footer: content.footer }}
+      chrome={{ variant: 'home', currentPath: '/', navItems: content.navItems, headerCta: content.headerCta, site: content.site, footer: content.footer }}
       style={designVariables(content.design) as CSSProperties}
     />
     <SiteChatbot />

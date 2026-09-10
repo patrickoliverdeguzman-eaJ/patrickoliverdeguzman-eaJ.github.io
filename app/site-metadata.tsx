@@ -35,7 +35,10 @@ export default function SiteMetadata() {
     void (async () => {
       const settings = await fetchPublishedDoc('site_settings', 'global');
       if (cancelled) return;
-      let pageSlug = pathname.includes('partners') ? 'partners' : pathname.includes('custom') ? new URLSearchParams(window.location.search).get('page') ?? '' : 'home';
+      const routeSlug = pathname.split('/').filter(Boolean)[0]?.replace(/\.html$/i, '') ?? '';
+      let pageSlug = routeSlug === 'custom'
+        ? new URLSearchParams(window.location.search).get('page') ?? ''
+        : routeSlug || 'home';
       if (pageSlug === 'home') pageSlug = text(settings?.homepageSlug) ?? 'home';
       const page = pageSlug ? await fetchPublishedDoc('builder_page', pageSlug) : null;
       const pageSettings = page && typeof page.settings === 'object' && page.settings !== null ? page.settings as Record<string, unknown> : null;
