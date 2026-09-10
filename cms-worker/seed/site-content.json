@@ -38,12 +38,14 @@
       "title": "Main navigation",
       "data": {
         "items": [
-          { "id": "nav-solutions", "label": "Solutions", "href": "#solutions", "enabled": true },
-          { "id": "nav-services", "label": "Services", "href": "#services", "enabled": true },
-          { "id": "nav-approach", "label": "Why INFOStorage", "href": "#approach", "enabled": true },
+          { "id": "nav-about", "label": "About", "href": "/about", "enabled": true },
+          { "id": "nav-solutions", "label": "Solutions", "href": "/solutions", "enabled": true },
+          { "id": "nav-services", "label": "Services", "href": "/services", "enabled": true },
           { "id": "nav-partners", "label": "Partners", "href": "/partners", "enabled": true },
-          { "id": "nav-contact", "label": "Contact", "href": "#contact", "enabled": true }
-        ]
+          { "id": "nav-contact", "label": "Contact", "href": "/contact", "enabled": true }
+        ],
+        "ctaLabel": "Start a conversation",
+        "ctaHref": "/contact"
       }
     },
     {

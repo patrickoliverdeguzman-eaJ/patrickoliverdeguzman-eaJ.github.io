@@ -18,7 +18,7 @@ export function PartnersPage() {
     <CmsSitePage
       kind="partners"
       page={content.builder ?? createPartnersBuilderPage(content)}
-      chrome={{ variant: 'partners', navItems: content.navItems, headerCta: content.headerCta, site: content.site, footer: content.footer }}
+      chrome={{ variant: 'partners', currentPath: '/partners', navItems: content.navItems, headerCta: content.headerCta, site: content.site, footer: content.footer }}
       style={designVariables(content.design) as CSSProperties}
     />
     <SiteChatbot />

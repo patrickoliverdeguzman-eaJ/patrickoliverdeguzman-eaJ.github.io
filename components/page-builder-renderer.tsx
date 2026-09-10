@@ -7,6 +7,8 @@ import { BUILDER_ADVANCED_STYLE_KEYS, type BuilderAdvancedStyleKey, type Builder
 
 export type SiteChrome = {
   variant: 'home' | 'partners';
+  /** Route rendered by the current page. Used for active navigation state. */
+  currentPath?: string;
   navItems: Array<{ id: string; label: string; href: string; enabled?: boolean; parentId?: string }>;
   headerCta: { label: string; href: string };
   site: { logo: string; logoLight?: string; logoDark?: string; logoMobile?: string; logoWidth?: string; logoMobileWidth?: string; logoAlignment?: string; logoSpacing?: string; phone: string; phoneHref: string; address: string; addressUrl: string };
@@ -155,10 +157,25 @@ function EditableValue({ node, field, fallback, editable, onUpdateNodeProp, clas
     onBlur={(event) => onUpdateNodeProp?.(node.id, field, event.currentTarget.textContent ?? '')}>{value}</span>;
 }
 
-function siteHref(href: string, chrome?: SiteChrome): string {
-  const safe = safeLink(href);
-  if (safe === '/partners' && process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true') return '/partners.html';
-  if (chrome?.variant === 'partners' && safe.startsWith('#')) return `/${safe}`;
+function siteHref(href: string, _chrome?: SiteChrome): string {
+  let safe = safeLink(href);
+  const legacySectionRoutes: Record<string, string> = {
+    '#approach': '/about',
+    '#solutions': '/solutions',
+    '#services': '/services',
+    '#contact': '/contact',
+    '/#approach': '/about',
+    '/#solutions': '/solutions',
+    '/#services': '/services',
+    '/#contact': '/contact',
+  };
+  safe = legacySectionRoutes[safe] ?? safe;
+  if (process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true') {
+    const [path, fragment] = safe.split('#', 2);
+    if (/^\/(?:about|solutions|services|partners|contact)$/.test(path)) {
+      return `${path}.html${fragment ? `#${fragment}` : ''}`;
+    }
+  }
   return safe;
 }
 
@@ -200,7 +217,7 @@ export function SiteHeader({ chrome, node, editable, onUpdateNodeProp, onSelectN
   ) : item.label;
   return (
     <nav className="nav-wrap" data-cms-chrome="header" aria-label="Main navigation">
-      <a href={isPartners ? '/' : '#top'} className={`brand brand-image brand-align-${['left', 'center', 'right'].includes(logoAlignment) ? logoAlignment : 'left'}`} aria-label="INFOStorage home" style={logoStyle}>
+      <a href="/" className={`brand brand-image brand-align-${['left', 'center', 'right'].includes(logoAlignment) ? logoAlignment : 'left'}`} aria-label="INFOStorage home" style={logoStyle}>
         <span className={`brand-logo-frame ${isPartners ? 'partner-brand-logo-frame' : ''}`}>
           <picture>{mobileLogo !== logo && <source media="(max-width: 620px)" srcSet={mobileLogo} />}<img className="brand-logo" src={logo} alt={node ? prop(node, 'logoAlt', 'INFOStorage Corporation') : 'INFOStorage Corporation'} /></picture>
         </span>
@@ -208,7 +225,7 @@ export function SiteHeader({ chrome, node, editable, onUpdateNodeProp, onSelectN
       <div className="desktop-links">
         {rootItems.map((item) => {
           const children = navItems.filter((child) => child.enabled !== false && child.parentId === item.id);
-          return children.length ? <details className="nav-dropdown" key={item.id}><summary data-cms-item={item.id}>{navigationLabel(item)}<ChevronRight size={13} /></summary><div>{children.map((child) => <a data-cms-item={child.id} href={siteHref(child.href, chrome)} key={child.id}>{navigationLabel(child)}</a>)}</div></details> : <a data-cms-item={item.id} className={isPartners && item.href === '/partners' ? 'nav-active' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{navigationLabel(item)}</a>;
+          return children.length ? <details className="nav-dropdown" key={item.id}><summary data-cms-item={item.id}>{navigationLabel(item)}<ChevronRight size={13} /></summary><div>{children.map((child) => <a data-cms-item={child.id} href={siteHref(child.href, chrome)} key={child.id}>{navigationLabel(child)}</a>)}</div></details> : <a data-cms-item={item.id} className={chrome.currentPath === item.href ? 'nav-active' : undefined} href={siteHref(item.href, chrome)} key={item.id}>{navigationLabel(item)}</a>;
         })}
       </div>
       <a className="nav-cta" href={siteHref(ctaHref, chrome)}>{node ? <EditableValue node={node} field="ctaLabel" fallback={ctaLabel} editable={editable && !useGlobal} onUpdateNodeProp={onUpdateNodeProp} /> : ctaLabel} <ArrowUpRight size={16} strokeWidth={2.1} /></a>

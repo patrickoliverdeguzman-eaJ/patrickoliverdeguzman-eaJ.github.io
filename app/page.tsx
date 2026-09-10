@@ -18,7 +18,7 @@ export default function Home() {
     <CmsSitePage
       kind="home"
       page={content.builder ?? createHomeBuilderPage(content)}
-      chrome={{ variant: 'home', navItems: content.navItems, headerCta: content.headerCta, site: content.site, footer: content.footer }}
+      chrome={{ variant: 'home', currentPath: '/', navItems: content.navItems, headerCta: content.headerCta, site: content.site, footer: content.footer }}
       style={designVariables(content.design) as CSSProperties}
     />
     <SiteChatbot />

@@ -230,11 +230,11 @@ export async function fetchPublishedDoc(type: string, slug: string): Promise<Rec
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_NAV_ITEMS: NavItem[] = [
-  { id: 'nav-solutions', label: 'Solutions', href: '#solutions', enabled: true },
-  { id: 'nav-services', label: 'Services', href: '#services', enabled: true },
-  { id: 'nav-approach', label: 'Why INFOStorage', href: '#approach', enabled: true },
+  { id: 'nav-about', label: 'About', href: '/about', enabled: true },
+  { id: 'nav-solutions', label: 'Solutions', href: '/solutions', enabled: true },
+  { id: 'nav-services', label: 'Services', href: '/services', enabled: true },
   { id: 'nav-partners', label: 'Partners', href: '/partners', enabled: true },
-  { id: 'nav-contact', label: 'Contact', href: '#contact', enabled: true },
+  { id: 'nav-contact', label: 'Contact', href: '/contact', enabled: true },
 ];
 
 export const DEFAULT_SOLUTIONS: SolutionContent[] = [
@@ -357,7 +357,7 @@ export const DEFAULT_HOME: HomeContent = {
   design: DEFAULT_DESIGN_SYSTEM,
   homepageSlug: 'home',
   navItems: DEFAULT_NAV_ITEMS,
-  headerCta: { label: 'Start a conversation', href: '#contact' },
+  headerCta: { label: 'Start a conversation', href: '/contact' },
   hero: {
     eyebrow: 'Premium solutions integrator',
     titleA: 'Enterprise-class solutions for',

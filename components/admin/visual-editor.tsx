@@ -444,6 +444,9 @@ function slugFromTitle(value: string): string {
 }
 
 function customPageHref(slug: string): string {
+  if (['about', 'solutions', 'services', 'contact'].includes(slug)) {
+    return process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true' ? `/${slug}.html` : `/${slug}`;
+  }
   const base = process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true' ? '/custom.html' : '/custom';
   return `${base}?page=${encodeURIComponent(slug)}`;
 }
@@ -697,6 +700,7 @@ export function VisualEditor() {
   const previewNavItems = headerLinks(navigation?.data.items);
   const previewChrome = {
     variant: page,
+    currentPath: activePageSlug === 'home' ? '/' : `/${activePageSlug}`,
     navItems: previewNavItems.length ? previewNavItems : DEFAULT_HOME.navItems,
     headerCta: {
       label: text(navigation?.data.ctaLabel, DEFAULT_HOME.headerCta.label),
