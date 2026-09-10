@@ -19,6 +19,9 @@ type ShellState =
   | { status: 'login' }
   | { status: 'app'; user: AuthUser };
 
+const PRIVATE_STUDIO_URL = 'https://infostorage-enterprise.yasuoxd-yx.chatgpt.site/admin/login';
+const PUBLIC_GITHUB_BUILD = process.env.NEXT_PUBLIC_GITHUB_PAGES === 'true';
+
 function isLoginPath(pathname: string): boolean {
   return pathname === adminPath('/admin/login') || pathname === '/admin/login/';
 }
@@ -38,6 +41,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     try {
+      if (PUBLIC_GITHUB_BUILD) {
+        window.location.replace(PRIVATE_STUDIO_URL);
+        return () => {
+          cancelled = true;
+        };
+      }
       const path = window.location.pathname;
       const loginPage = isLoginPath(path);
       const token = getCmsToken();
@@ -81,6 +90,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  if (PUBLIC_GITHUB_BUILD) {
+    return (
+      <div className="admin-login">
+        <div className="admin-login-card" style={{ textAlign: 'center' }}>
+          <h1>Private studio</h1>
+          <p>The CMS is available only through the protected INFOStorage studio.</p>
+          <a className="admin-btn admin-btn-primary" href={PRIVATE_STUDIO_URL} style={{ justifyContent: 'center' }}>Open secure studio</a>
+        </div>
+      </div>
+    );
+  }
 
   if (state.status === 'checking') {
     return (

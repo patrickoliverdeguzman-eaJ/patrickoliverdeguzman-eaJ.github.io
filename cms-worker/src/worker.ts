@@ -4,7 +4,13 @@ interface JsonRecord {
 }
 type Role = 'admin' | 'editor' | 'viewer';
 type DocumentStatus = 'draft' | 'published' | 'archived';
-type CmsEnv = Env & { CMS_ADMIN_SETUP_TOKEN?: string };
+type CmsEnv = Env & {
+  CMS_ADMIN_SETUP_TOKEN?: string;
+  CMS_PASSWORD_PEPPER?: string;
+  ADMIN_ORIGINS?: string;
+};
+
+type PasswordScheme = 'pbkdf2-sha256-v1' | 'pbkdf2-sha256-hmac-v2';
 
 type CmsUser = {
   id: string;
@@ -85,12 +91,17 @@ const MAX_CHAT_MESSAGE_CHARS = 2_000;
 const MAX_CHAT_CONVERSATIONS = 100;
 const SESSION_DAYS = 1;
 const LOGIN_RATE_LIMIT = 5;
+const LOGIN_IP_RATE_LIMIT = 30;
 const LOGIN_RATE_WINDOW_SECONDS = 5 * 60;
 const CHAT_CREATE_RATE_LIMIT = 12;
 const CHAT_MESSAGE_RATE_LIMIT = 60;
 const CHAT_RATE_WINDOW_SECONDS = 10 * 60;
 // Cloudflare Workers currently supports at most 100,000 PBKDF2 iterations.
 const PASSWORD_ITERATIONS = 100_000;
+const PASSWORD_SCHEME_V1: PasswordScheme = 'pbkdf2-sha256-v1';
+const PASSWORD_SCHEME_V2: PasswordScheme = 'pbkdf2-sha256-hmac-v2';
+const DUMMY_PASSWORD_SALT = 'AAAAAAAAAAAAAAAAAAAAAA==';
+const DUMMY_PASSWORD_HASH = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
 const ALLOWED_MEDIA_EXTENSIONS: Record<string, readonly string[]> = {
   'image/jpeg': ['jpg', 'jpeg'],
   'image/png': ['png'],
@@ -458,14 +469,47 @@ async function derivePasswordHash(password: string, salt: Uint8Array): Promise<s
   return toBase64(new Uint8Array(bits));
 }
 
-async function createPasswordRecord(password: string): Promise<{ salt: string; hash: string }> {
-  const saltBytes = new Uint8Array(16);
-  crypto.getRandomValues(saltBytes);
-  return { salt: toBase64(saltBytes), hash: await derivePasswordHash(password, saltBytes) };
+async function applyPasswordPepper(hash: string, pepper: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    toArrayBuffer(encoder.encode(pepper)),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, toArrayBuffer(encoder.encode(hash)));
+  return toBase64(new Uint8Array(signature));
 }
 
-async function verifyPassword(password: string, salt: string, expectedHash: string): Promise<boolean> {
-  const actualHash = await derivePasswordHash(password, fromBase64(salt));
+async function createPasswordRecord(
+  password: string,
+  env: CmsEnv,
+): Promise<{ salt: string; hash: string; scheme: PasswordScheme }> {
+  const saltBytes = new Uint8Array(16);
+  crypto.getRandomValues(saltBytes);
+  const derivedHash = await derivePasswordHash(password, saltBytes);
+  if (!env.CMS_PASSWORD_PEPPER) {
+    return { salt: toBase64(saltBytes), hash: derivedHash, scheme: PASSWORD_SCHEME_V1 };
+  }
+  return {
+    salt: toBase64(saltBytes),
+    hash: await applyPasswordPepper(derivedHash, env.CMS_PASSWORD_PEPPER),
+    scheme: PASSWORD_SCHEME_V2,
+  };
+}
+
+async function verifyPassword(
+  password: string,
+  salt: string,
+  expectedHash: string,
+  scheme: PasswordScheme,
+  env: CmsEnv,
+): Promise<boolean> {
+  const derivedHash = await derivePasswordHash(password, fromBase64(salt));
+  if (scheme === PASSWORD_SCHEME_V2 && !env.CMS_PASSWORD_PEPPER) return false;
+  const actualHash = scheme === PASSWORD_SCHEME_V2
+    ? await applyPasswordPepper(derivedHash, env.CMS_PASSWORD_PEPPER as string)
+    : derivedHash;
   return timingSafeEqual(actualHash, expectedHash);
 }
 
@@ -475,6 +519,10 @@ function now(): string {
 
 function futureDate(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function futureMinutes(minutes: number): string {
+  return new Date(Date.now() + minutes * 60 * 1000).toISOString();
 }
 
 function json(data: JsonValue, init: ResponseInit = {}): Response {
@@ -487,9 +535,18 @@ function publicOrigins(env: CmsEnv): Set<string> {
   return new Set(env.PUBLIC_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean));
 }
 
+function adminOrigins(env: CmsEnv): Set<string> {
+  const configured = env.ADMIN_ORIGINS ?? env.PUBLIC_ORIGINS;
+  return new Set(configured.split(',').map((origin) => origin.trim()).filter(Boolean));
+}
+
+function allowedOrigins(request: Request, env: CmsEnv): Set<string> {
+  return new URL(request.url).pathname.startsWith('/v1/admin') ? adminOrigins(env) : publicOrigins(env);
+}
+
 function withCors(response: Response, request: Request, env: CmsEnv): Response {
   const origin = request.headers.get('origin');
-  if (!origin || !publicOrigins(env).has(origin)) return response;
+  if (!origin || !allowedOrigins(request, env).has(origin)) return response;
 
   const headers = new Headers(response.headers);
   headers.set('access-control-allow-origin', origin);
@@ -498,6 +555,35 @@ function withCors(response: Response, request: Request, env: CmsEnv): Response {
   headers.set('access-control-max-age', '600');
   headers.append('vary', 'Origin');
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function secureResponse(response: Response, request: Request): Response {
+  const url = new URL(request.url);
+  const headers = new Headers(response.headers);
+  headers.set('x-content-type-options', 'nosniff');
+  headers.set('x-frame-options', 'DENY');
+  headers.set('referrer-policy', 'no-referrer');
+  headers.set('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  headers.set('content-security-policy', "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+  headers.set('cross-origin-resource-policy', 'cross-origin');
+  if (url.protocol === 'https:') {
+    headers.set('strict-transport-security', 'max-age=31536000; includeSubDomains');
+  }
+  if (!headers.has('cache-control') && (
+    url.pathname.startsWith('/v1/admin') ||
+    url.pathname.startsWith('/v1/chat') ||
+    url.pathname === '/v1/health'
+  )) {
+    headers.set('cache-control', 'no-store');
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function requirePublicWriteOrigin(request: Request, env: CmsEnv): void {
+  const origin = request.headers.get('origin');
+  if (!origin || !publicOrigins(env).has(origin)) {
+    throw new HttpError(403, 'This request did not come from an allowed website.', 'origin_not_allowed');
+  }
 }
 
 async function readJson(request: Request): Promise<Record<string, unknown>> {
@@ -546,7 +632,7 @@ async function sessionUser(request: Request, env: CmsEnv): Promise<CmsUser | nul
     `SELECT u.id, u.email, u.display_name, u.role
      FROM cms_sessions s
      INNER JOIN cms_users u ON u.id = s.user_id
-     WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP`,
+     WHERE s.token_hash = ? AND unixepoch(s.expires_at) > unixepoch('now')`,
   )
     .bind(tokenHash)
     .first<CmsUser>();
@@ -808,15 +894,15 @@ async function bootstrap(request: Request, env: CmsEnv): Promise<Response> {
   const email = validateEmail(body.email);
   const displayName = asString(body.displayName, 'Display name', 80);
   const password = validatePassword(body.password);
-  const passwordRecord = await createPasswordRecord(password);
+  const passwordRecord = await createPasswordRecord(password, env);
   const user: CmsUser = { id: crypto.randomUUID(), email, display_name: displayName, role: 'admin' };
 
   try {
     await env.CMS_DB.prepare(
-      `INSERT INTO cms_users (id, email, display_name, role, password_salt, password_hash)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO cms_users (id, email, display_name, role, password_salt, password_hash, password_scheme)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(user.id, user.email, user.display_name, user.role, passwordRecord.salt, passwordRecord.hash)
+      .bind(user.id, user.email, user.display_name, user.role, passwordRecord.salt, passwordRecord.hash, passwordRecord.scheme)
       .run();
   } catch (error) {
     if (isUniqueError(error)) throw new HttpError(409, 'That email is already in use.', 'email_in_use');
@@ -830,6 +916,13 @@ async function login(request: Request, env: CmsEnv): Promise<Response> {
   const body = await readJson(request);
   const email = validateEmail(body.email);
   const password = validatePassword(body.password);
+  await consumeRateLimit(
+    env,
+    `login-ip:${requestClientKey(request)}`,
+    LOGIN_IP_RATE_LIMIT,
+    LOGIN_RATE_WINDOW_SECONDS,
+    'Too many sign-in attempts. Try again in a few minutes.',
+  );
   const rateLimitKey = await consumeRateLimit(
     env,
     `login:${requestClientKey(request)}:${email}`,
@@ -838,17 +931,32 @@ async function login(request: Request, env: CmsEnv): Promise<Response> {
     'Too many sign-in attempts. Try again in a few minutes.',
   );
   const account = await env.CMS_DB.prepare(
-    `SELECT id, email, display_name, role, password_salt, password_hash
+    `SELECT id, email, display_name, role, password_salt, password_hash, password_scheme
      FROM cms_users WHERE email = ?`,
   )
     .bind(email)
-    .first<CmsUser & { password_salt: string; password_hash: string }>();
+    .first<CmsUser & { password_salt: string; password_hash: string; password_scheme: PasswordScheme }>();
 
-  if (!account || !(await verifyPassword(password, account.password_salt, account.password_hash))) {
+  const passwordValid = account
+    ? await verifyPassword(password, account.password_salt, account.password_hash, account.password_scheme, env)
+    : await verifyPassword(
+      password,
+      DUMMY_PASSWORD_SALT,
+      DUMMY_PASSWORD_HASH,
+      env.CMS_PASSWORD_PEPPER ? PASSWORD_SCHEME_V2 : PASSWORD_SCHEME_V1,
+      env,
+    );
+  if (!account || !passwordValid) {
     throw new HttpError(401, 'Email or password is not correct.', 'invalid_credentials');
   }
 
   const user: CmsUser = account;
+  if (account.password_scheme === PASSWORD_SCHEME_V1 && env.CMS_PASSWORD_PEPPER) {
+    const upgraded = await createPasswordRecord(password, env);
+    await env.CMS_DB.prepare(
+      'UPDATE cms_users SET password_salt = ?, password_hash = ?, password_scheme = ?, updated_at = ? WHERE id = ?',
+    ).bind(upgraded.salt, upgraded.hash, upgraded.scheme, now(), user.id).run();
+  }
   await clearRateLimit(env, rateLimitKey);
   const session = await createSession(user, env);
   await logAudit(env, { userId: user.id, action: 'login', resourceType: 'user', resourceId: user.id, detail: user.email });
@@ -863,17 +971,17 @@ async function changePassword(request: Request, user: CmsUser, env: CmsEnv): Pro
     throw new HttpError(400, 'Choose a new password that is different from the current password.', 'invalid_input');
   }
   const account = await env.CMS_DB.prepare(
-    'SELECT password_salt, password_hash FROM cms_users WHERE id = ?',
-  ).bind(user.id).first<{ password_salt: string; password_hash: string }>();
-  if (!account || !(await verifyPassword(currentPassword, account.password_salt, account.password_hash))) {
+    'SELECT password_salt, password_hash, password_scheme FROM cms_users WHERE id = ?',
+  ).bind(user.id).first<{ password_salt: string; password_hash: string; password_scheme: PasswordScheme }>();
+  if (!account || !(await verifyPassword(currentPassword, account.password_salt, account.password_hash, account.password_scheme, env))) {
     throw new HttpError(401, 'The current password is not correct.', 'invalid_credentials');
   }
-  const passwordRecord = await createPasswordRecord(newPassword);
+  const passwordRecord = await createPasswordRecord(newPassword, env);
   const updatedAt = now();
   await env.CMS_DB.batch([
     env.CMS_DB.prepare(
-      'UPDATE cms_users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?',
-    ).bind(passwordRecord.salt, passwordRecord.hash, updatedAt, user.id),
+      'UPDATE cms_users SET password_salt = ?, password_hash = ?, password_scheme = ?, updated_at = ? WHERE id = ?',
+    ).bind(passwordRecord.salt, passwordRecord.hash, passwordRecord.scheme, updatedAt, user.id),
     env.CMS_DB.prepare('DELETE FROM cms_sessions WHERE user_id = ?').bind(user.id),
   ]);
   const session = await createSession(user, env);
@@ -882,12 +990,9 @@ async function changePassword(request: Request, user: CmsUser, env: CmsEnv): Pro
 }
 
 async function recoverPassword(request: Request, env: CmsEnv): Promise<Response> {
-  if (!env.CMS_ADMIN_SETUP_TOKEN) {
-    throw new HttpError(503, 'CMS recovery is not configured. Contact the site administrator.', 'recovery_unavailable');
-  }
   const body = await readJson(request);
   const email = validateEmail(body.email);
-  const setupToken = asString(body.setupToken, 'Recovery token', 512);
+  const recoveryToken = asString(body.recoveryToken, 'Recovery token', 512);
   const newPassword = validatePassword(body.newPassword);
   await consumeRateLimit(
     env,
@@ -896,23 +1001,77 @@ async function recoverPassword(request: Request, env: CmsEnv): Promise<Response>
     LOGIN_RATE_WINDOW_SECONDS,
     'Too many recovery attempts. Try again in a few minutes.',
   );
-  if (!(await timingSafeEqual(setupToken, env.CMS_ADMIN_SETUP_TOKEN))) {
-    throw new HttpError(401, 'The recovery token is not valid.', 'invalid_recovery_token');
+  const tokenHash = await sha256Hex(recoveryToken);
+  const passwordRecord = await createPasswordRecord(newPassword, env);
+  const updatedAt = now();
+  const results = await env.CMS_DB.batch([
+    env.CMS_DB.prepare(
+      `UPDATE cms_users
+       SET password_salt = ?, password_hash = ?, password_scheme = ?, updated_at = ?
+       WHERE email = ? AND id = (
+         SELECT user_id FROM cms_password_recovery_tokens
+         WHERE token_hash = ? AND used_at IS NULL AND unixepoch(expires_at) > unixepoch(?)
+       )`,
+    ).bind(passwordRecord.salt, passwordRecord.hash, passwordRecord.scheme, updatedAt, email, tokenHash, updatedAt),
+    env.CMS_DB.prepare(
+      `UPDATE cms_password_recovery_tokens SET used_at = ?
+       WHERE token_hash = ? AND used_at IS NULL AND unixepoch(expires_at) > unixepoch(?)
+         AND user_id = (SELECT id FROM cms_users WHERE email = ?)`,
+    ).bind(updatedAt, tokenHash, updatedAt, email),
+    env.CMS_DB.prepare(
+      `DELETE FROM cms_sessions WHERE user_id = (
+         SELECT user_id FROM cms_password_recovery_tokens WHERE token_hash = ? AND used_at = ?
+       )`,
+    ).bind(tokenHash, updatedAt),
+  ]);
+  if (Number(results[0]?.meta?.changes ?? 0) !== 1 || Number(results[1]?.meta?.changes ?? 0) !== 1) {
+    throw new HttpError(401, 'The recovery code is invalid or has expired.', 'invalid_recovery_token');
   }
   const account = await env.CMS_DB.prepare(
-    'SELECT id, email, display_name, role FROM cms_users WHERE email = ?',
-  ).bind(email).first<CmsUser>();
-  if (!account) throw new HttpError(404, 'No CMS account uses that email address.', 'not_found');
-  const passwordRecord = await createPasswordRecord(newPassword);
-  const updatedAt = now();
+    'SELECT id FROM cms_users WHERE email = ?',
+  ).bind(email).first<{ id: string }>();
+  await logAudit(env, { userId: account?.id ?? null, action: 'user.password.recover', resourceType: 'user', resourceId: account?.id });
+  return json({ reset: true });
+}
+
+async function issuePasswordRecoveryToken(
+  id: string,
+  request: Request,
+  actor: CmsUser,
+  env: CmsEnv,
+): Promise<Response> {
+  const body = await readJson(request);
+  const rawMinutes = body.expiresInMinutes ?? 15;
+  if (typeof rawMinutes !== 'number' || !Number.isInteger(rawMinutes) || rawMinutes < 5 || rawMinutes > 60) {
+    throw new HttpError(400, 'Recovery code expiry must be between 5 and 60 minutes.', 'invalid_input');
+  }
+  const target = await env.CMS_DB.prepare(
+    'SELECT id, email, display_name, role FROM cms_users WHERE id = ?',
+  ).bind(id).first<CmsUser>();
+  if (!target) throw new HttpError(404, 'User was not found.', 'not_found');
+
+  const recoveryToken = randomToken();
+  const tokenHash = await sha256Hex(recoveryToken);
+  const createdAt = now();
+  const expiresAt = futureMinutes(rawMinutes);
   await env.CMS_DB.batch([
     env.CMS_DB.prepare(
-      'UPDATE cms_users SET password_salt = ?, password_hash = ?, updated_at = ? WHERE id = ?',
-    ).bind(passwordRecord.salt, passwordRecord.hash, updatedAt, account.id),
-    env.CMS_DB.prepare('DELETE FROM cms_sessions WHERE user_id = ?').bind(account.id),
+      'UPDATE cms_password_recovery_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+    ).bind(createdAt, target.id),
+    env.CMS_DB.prepare(
+      `INSERT INTO cms_password_recovery_tokens
+       (id, user_id, token_hash, expires_at, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(crypto.randomUUID(), target.id, tokenHash, expiresAt, actor.id, createdAt),
   ]);
-  await logAudit(env, { userId: account.id, action: 'user.password.recover', resourceType: 'user', resourceId: account.id });
-  return json({ reset: true });
+  await logAudit(env, {
+    userId: actor.id,
+    action: 'user.recovery-code.issue',
+    resourceType: 'user',
+    resourceId: target.id,
+    detail: `Expires ${expiresAt}`,
+  });
+  return json({ user: formatUser(target), recoveryToken, expiresAt }, { status: 201 });
 }
 
 async function listDocuments(request: Request, env: CmsEnv): Promise<Response> {
@@ -1621,6 +1780,11 @@ async function requireVisitorConversation(id: string, request: Request, env: Cms
 }
 
 async function createVisitorConversation(request: Request, env: CmsEnv): Promise<Response> {
+  requirePublicWriteOrigin(request, env);
+  const body = await readJson(request);
+  if (asOptionalString(body.website, 200)) {
+    throw new HttpError(400, 'The message could not be sent.', 'invalid_input');
+  }
   await consumeRateLimit(
     env,
     `chat-create:${requestClientKey(request)}`,
@@ -1628,7 +1792,6 @@ async function createVisitorConversation(request: Request, env: CmsEnv): Promise
     CHAT_RATE_WINDOW_SECONDS,
     'Too many new conversations were started from this connection. Try again later.',
   );
-  const body = await readJson(request);
   const visitorName = asOptionalString(body.visitorName, 80) || 'Website visitor';
   const visitorEmail = validateOptionalEmail(body.visitorEmail) ?? null;
   const message = validateChatMessage(body.message);
@@ -1666,6 +1829,7 @@ async function createVisitorConversation(request: Request, env: CmsEnv): Promise
 }
 
 async function addVisitorMessage(id: string, request: Request, env: CmsEnv): Promise<Response> {
+  requirePublicWriteOrigin(request, env);
   await consumeRateLimit(
     env,
     `chat-message:${requestClientKey(request)}`,
@@ -1805,15 +1969,15 @@ async function createUser(request: Request, actor: CmsUser, env: CmsEnv): Promis
   const displayName = asString(body.displayName, 'Display name', 80);
   const password = validatePassword(body.password);
   const role = validateRole(body.role);
-  const passwordRecord = await createPasswordRecord(password);
+  const passwordRecord = await createPasswordRecord(password, env);
   const user: CmsUser = { id: crypto.randomUUID(), email, display_name: displayName, role };
 
   try {
     await env.CMS_DB.prepare(
-      `INSERT INTO cms_users (id, email, display_name, role, password_salt, password_hash)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO cms_users (id, email, display_name, role, password_salt, password_hash, password_scheme)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-      .bind(user.id, user.email, user.display_name, user.role, passwordRecord.salt, passwordRecord.hash)
+      .bind(user.id, user.email, user.display_name, user.role, passwordRecord.salt, passwordRecord.hash, passwordRecord.scheme)
       .run();
   } catch (error) {
     if (isUniqueError(error)) throw new HttpError(409, 'That email is already in use.', 'email_in_use');
@@ -1926,6 +2090,10 @@ async function serveMedia(id: string, env: CmsEnv): Promise<Response> {
   object.writeHttpMetadata(headers);
   headers.set('etag', object.httpEtag);
   headers.set('cache-control', 'public, max-age=31536000, immutable');
+  headers.set(
+    'content-disposition',
+    `${media.mime_type === 'application/pdf' ? 'attachment' : 'inline'}; filename="${sanitizeFilename(media.filename)}"`,
+  );
   headers.set('x-content-type-options', 'nosniff');
   return new Response(object.body, { headers });
 }
@@ -2064,6 +2232,9 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
     requireRole(user, 'admin');
     if (request.method === 'GET' && adminRoute.length === 1) return listUsers(env);
     if (request.method === 'POST' && adminRoute.length === 1) return createUser(request, user, env);
+    if (request.method === 'POST' && adminRoute.length === 3 && adminRoute[2] === 'recovery-token') {
+      return issuePasswordRecoveryToken(decodeURIComponent(adminRoute[1]), request, user, env);
+    }
     if (request.method === 'DELETE' && adminRoute.length === 2) return deleteUser(decodeURIComponent(adminRoute[1]), user, env);
   }
 
@@ -2138,13 +2309,17 @@ async function route(request: Request, env: CmsEnv): Promise<Response> {
 
 export default {
   async fetch(request, env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
+      url.protocol = 'https:';
+      return secureResponse(Response.redirect(url.toString(), 308), request);
+    }
     try {
       const response = await route(request, env);
-      return withCors(response, request, env);
+      return secureResponse(withCors(response, request, env), request);
     } catch (error) {
-      const url = new URL(request.url);
       if (error instanceof HttpError) {
-        return withCors(json({ error: error.message, code: error.code, ...(error.issues ? { issues: [...error.issues] } : {}) }, { status: error.status }), request, env);
+        return secureResponse(withCors(json({ error: error.message, code: error.code, ...(error.issues ? { issues: [...error.issues] } : {}) }, { status: error.status }), request, env), request);
       }
       console.error(JSON.stringify({
         message: 'Unhandled CMS request error',
@@ -2152,7 +2327,7 @@ export default {
         path: url.pathname,
         error: error instanceof Error ? error.message : String(error),
       }));
-      return withCors(json({ error: 'The CMS could not complete this request.', code: 'internal_error' }, { status: 500 }), request, env);
+      return secureResponse(withCors(json({ error: 'The CMS could not complete this request.', code: 'internal_error' }, { status: 500 }), request, env), request);
     }
   },
   async scheduled(_controller, env, context): Promise<void> {

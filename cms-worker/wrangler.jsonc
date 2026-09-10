@@ -5,7 +5,8 @@
   "compatibility_date": "2026-09-09",
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "PUBLIC_ORIGINS": "https://infostorage-enterprise.yasuoxd-yx.chatgpt.site,https://patrickoliverdeguzman-eaj.github.io,http://localhost:3000,http://127.0.0.1:3000"
+    "PUBLIC_ORIGINS": "https://infostorage-enterprise.yasuoxd-yx.chatgpt.site,https://patrickoliverdeguzman-eaj.github.io,http://localhost:3000,http://127.0.0.1:3000",
+    "ADMIN_ORIGINS": "https://infostorage-enterprise.yasuoxd-yx.chatgpt.site,http://localhost:3000,http://127.0.0.1:3000"
   },
   "triggers": {
     "crons": ["*/5 * * * *"]

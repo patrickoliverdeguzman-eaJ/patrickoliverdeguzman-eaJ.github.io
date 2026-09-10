@@ -171,7 +171,16 @@ function fromDocument(document: CmsDocument): Draft {
 }
 
 function cleanEndpoint(value: string): string {
-  return value.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+  const cleaned = value.trim().replace(/\/+$/, '').replace(/\/v1$/, '');
+  if (!cleaned) return '';
+  try {
+    const url = new URL(cleaned);
+    const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) return '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return '';
+  }
 }
 
 function dateTime(value: string | null): string {

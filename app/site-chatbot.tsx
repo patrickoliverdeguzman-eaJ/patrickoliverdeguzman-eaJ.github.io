@@ -41,6 +41,7 @@ export default function SiteChatbot() {
   ]);
   const [visitorName, setVisitorName] = useState('');
   const [visitorEmail, setVisitorEmail] = useState('');
+  const [website, setWebsite] = useState('');
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -114,7 +115,7 @@ export default function SiteChatbot() {
         const data = await request<{ conversation: ChatConversation; messages: ChatMessage[]; visitorToken: string }>('/v1/chat/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ visitorName, visitorEmail, message }),
+          body: JSON.stringify({ visitorName, visitorEmail, message, website }),
         });
         const nextSession = { id: data.conversation.id, token: data.visitorToken };
         localStorage.setItem(visitorStorageKey, JSON.stringify(nextSession));
@@ -130,6 +131,7 @@ export default function SiteChatbot() {
         setMessages((current) => [...current, data.message]);
       }
       setDraft('');
+      setWebsite('');
       window.setTimeout(() => inputRef.current?.focus(), 0);
     } catch (caught) {
       setError(formatError(caught));
@@ -177,6 +179,18 @@ export default function SiteChatbot() {
           {error && <div className="chatbot-error"><CircleAlert size={15} /><span>{error}</span>{session && <button type="button" onClick={resetConversation}>Start over</button>}</div>}
 
           <form className="chatbot-composer" onSubmit={submit}>
+            {!session && (
+              <input
+                aria-hidden="true"
+                autoComplete="off"
+                className="chatbot-honeypot"
+                name="company-website"
+                onChange={(event) => setWebsite(event.target.value)}
+                tabIndex={-1}
+                type="text"
+                value={website}
+              />
+            )}
             <label className="sr-only" htmlFor="infostorage-chat-input">Message INFOStorage</label>
             <textarea ref={inputRef} id="infostorage-chat-input" value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={session ? 'Write a reply…' : 'How can we help?'} maxLength={2000} rows={2} />
             <button type="submit" aria-label="Send message" disabled={!draft.trim() || busy || loadingConversation}>{busy ? <RefreshCw size={17} className="chatbot-spin" /> : <Send size={17} />}</button>

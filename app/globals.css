@@ -1193,6 +1193,7 @@ button, a, summary { -webkit-tap-highlight-color: transparent; }
 .chatbot-starters button { padding: 0.47rem 0.6rem; border: 1px solid rgba(255, 212, 228, 0.29); border-radius: 999px; background: transparent; color: rgba(255, 255, 255, 0.82); font: inherit; font-size: 0.69rem; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
 .chatbot-starters button:hover { background: #ffd4e4; color: #510028; }
 .chatbot-composer { display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; padding: 0.8rem; border-top: 1px solid rgba(255, 212, 228, 0.18); background: rgba(40, 8, 23, 0.92); }
+.chatbot-honeypot { position: absolute !important; left: -10000px !important; width: 1px !important; height: 1px !important; overflow: hidden !important; opacity: 0 !important; pointer-events: none !important; }
 .chatbot-composer textarea,
 .chatbot-contact input { min-width: 0; padding: 0.62rem 0.78rem; border: 1px solid rgba(255, 212, 228, 0.27); border-radius: 0.7rem; outline: none; background: rgba(255, 255, 255, 0.08); color: white; font: inherit; font-size: 0.83rem; }
 .chatbot-composer textarea { min-height: 50px; max-height: 120px; resize: vertical; }

@@ -72,7 +72,7 @@ export function LoginPage() {
       const res = await fetch(`${CMS_API}/v1/admin/recover-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, setupToken: recoveryToken, newPassword: password }),
+        body: JSON.stringify({ email, recoveryToken, newPassword: password }),
       });
       const data = (await res.json()) as { reset?: boolean; error?: string };
       if (!res.ok || !data.reset) throw new Error(data.error ?? 'Password reset failed.');
@@ -93,7 +93,7 @@ export function LoginPage() {
       <div className="admin-login-card">
         <img src="/infostorage-logo.png" alt="INFOStorage" style={{ width: 64, height: 64, marginBottom: '1rem' }} />
         <h1>{recovering ? 'Reset password' : 'Welcome back'}</h1>
-        <p>{recovering ? 'Use the private CMS setup token to recover the administrator account.' : 'Sign in to manage the INFOStorage CMS'}</p>
+        <p>{recovering ? 'Use the one-time recovery code created for you by a CMS administrator.' : 'Sign in to manage the INFOStorage CMS'}</p>
         <form onSubmit={recovering ? handleRecovery : handleSubmit}>
           <div className="admin-form-group">
             <label htmlFor="admin-email">Email</label>
@@ -141,7 +141,7 @@ export function LoginPage() {
                 />
               </div>
               <div className="admin-form-group">
-                <label htmlFor="admin-recovery-token">One-time setup token</label>
+                <label htmlFor="admin-recovery-token">One-time recovery code</label>
                 <div style={{ position: 'relative' }}>
                   <KeyRound size={18} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#a08090' }} />
                   <input
@@ -154,7 +154,7 @@ export function LoginPage() {
                     style={{ width: '100%', paddingLeft: '2.5rem' }}
                   />
                 </div>
-                <small>Use the CMS_ADMIN_SETUP_TOKEN stored privately in Cloudflare.</small>
+                <small>Ask a CMS administrator to create a 15-minute recovery code from Users. If you are the only administrator, contact the deployment owner.</small>
               </div>
             </>
           )}
